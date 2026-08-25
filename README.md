@@ -206,6 +206,32 @@ re-rendering the entire plan control, and relocating it would require a
 platform-level change to `ui-conversation`, which this plugin deliberately
 avoids. Accepted as-is.
 
+## Customizing the Approval Prompt Text
+
+The dialog shown when a tool requires approval uses the `askReason` template.
+Override it in your `cordis.yml` to localize or rewrite the prompt — for
+example, switch it to Chinese, swap wording, or add your own guidance:
+
+```yaml
+- insert:
+    - id: dsh-user-approval
+      name: dsh-user-approval
+      config:
+        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_dir 而非 shell'
+```
+
+Available placeholders: `{tool}` (tool name), `{mode}` (current approval
+mode), `{family}` (edit | shell | readonly | other).
+
+**Why this is a manual step**: the text is generated on the server and sent
+to the upstream DSH approval dialog. The plugin has no locale signal at that
+point (the language setting lives on the client), so the simplest and most
+predictable model is: deployers who need a non-English prompt set it
+directly. The mode selector chip on the composer toolbar is independently
+localized via DSH's locale service (`src/client/locales.ts`), so the chip
+labels already follow the UI language automatically — `askReason` is the one
+piece that needs manual configuration.
+
 ## Configuration
 
 ### Basic Usage (with all defaults)

@@ -189,6 +189,29 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 
 这一顺序由平台布局固定：`ui-conversation` 的 `InputBar` 在 "modes" 簇内、`conversation.input.left` 条目之前渲染 `conversation.input.plan`。插件无法在不重画整个计划控件的前提下移动该座位，而移动它需要对 `ui-conversation` 做平台级改动，本插件刻意不做。保持现状。
 
+## 自定义审批弹窗文案
+
+工具需要审批时弹窗里显示的文本来自 `askReason` 模板。可在 `cordis.yml` 中
+覆盖为中文或自定义内容 —— 比如换措辞、补上你想给用户的提示语：
+
+```yaml
+- insert:
+    - id: dsh-user-approval
+      name: dsh-user-approval
+      config:
+        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_dir 而非 shell'
+```
+
+可用占位符：`{tool}`（工具名）、`{mode}`（当前审批模式）、
+`{family}`（edit | shell | readonly | other）。
+
+**为什么这是手动配置**：这段文本在服务端生成并传给上游 DSH 的审批弹窗，
+插件在那一步没有任何 locale 信号（语言设置住在客户端）。最简单也最可预测
+的做法是：需要非英文文案的部署方直接在配置里写。输入框下方那个模式选择
+芯片通过 DSH 的 locale 服务独立本地化（见 `src/client/locales.ts`），所以
+芯片的标签已经会跟着 UI 切换走 —— `askReason` 是唯一需要手动跟语言对齐的
+部分。
+
 ## 配置
 
 ### 基本使用（使用所有默认值）
