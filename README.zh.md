@@ -1,10 +1,18 @@
 # dsh-user-approval
 
-**版本 0.1.2**
+**版本 0.1.3**
 
 [English](./README.md)
 
 用户审批模式插件，为 DeepSeek Harness 提供四种审批模式，控制工具执行前是否需要用户确认。
+
+## 更新日志
+
+### 0.1.3
+
+- **客户端按会话缓存审批模式** —— 重新进入已访问过的会话时，第一帧直接显示缓存值（不再有 `'off'` 闪烁），也不会再发 `/approval-mode` 命令。chip 自身状态变化（开关菜单、切模式）也不再触发重复查询。
+- **删除 `dsh-commands` 的类型 workaround** —— 上游 `0.1.0-rc.8` 已修正 `execute` 第三参数类型（应为 `readonly EncodedImageAttachment[]`，不是 `AbortSignal`），旧 cast 不再需要。
+- **`pnpm-workspace.yaml` 锁定** `dsh-system-prompt` 到 `0.1.1-rc.2`；之前 lockfile 里的 `0.1.0-rc.7` 已从 npm 撤下，新装环境需要这个 override。
 
 ## 演示
 

@@ -1,0 +1,2 @@
+overrides:
+  "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.2"

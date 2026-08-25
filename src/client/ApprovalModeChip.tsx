@@ -10,6 +10,8 @@ import css from './ApprovalModeChip.module.css'
 
 /** Injected business face from the client plugin. */
 export interface ApprovalModeChipInjected {
+  /** Last-known mode for this session from the client cache, or null on first visit. */
+  cachedMode: ApprovalMode | null
   /** Switch to a new approval mode by executing the /approval-mode command. */
   switchMode: (mode: string) => Promise<string | null>
   /** Get the default approval mode from server config. */
@@ -29,19 +31,26 @@ const DEFAULT_MODES: ApprovalMode[] = ['off', 'request', 'auto-edit', 'yolo']
  * @param props - composed slot props.
  * @returns the chip element.
  */
-export function ApprovalModeChip({ switchMode, getDefaultMode, t }: ApprovalModeChipProps) {
-  const [currentMode, setCurrentMode] = useState<ApprovalMode>('off')
+export function ApprovalModeChip({ cachedMode, switchMode, getDefaultMode, t }: ApprovalModeChipProps) {
+  // Sync cache peek: revisit a previously seen session shows the right mode on the
+  // very first frame, with no 'off' flicker and no fetch. First-time visit falls
+  // back to 'off' until the effect below resolves.
+  const [currentMode, setCurrentMode] = useState<ApprovalMode>(() => cachedMode ?? 'off')
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
 
-  // Initialize mode: always fetch from server to ensure sync after DSH restart
+  // One-shot fetch on mount only. The previous `[getDefaultMode]` dep re-fired on
+  // every chip re-render (inject factory mints a fresh closure per render),
+  // so opening the menu or switching modes issued redundant server queries.
+  // Empty deps + cache-hit early return covers the revisit case for free.
   useEffect(() => {
+    if (cachedMode) return
     getDefaultMode().then((mode) => {
       setCurrentMode(mode as ApprovalMode)
     }).catch(() => {
       // Keep default 'off' if failed to get mode
     })
-  }, [getDefaultMode])
+  }, [])
 
   const options = DEFAULT_MODES
 
