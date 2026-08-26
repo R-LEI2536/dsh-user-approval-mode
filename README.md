@@ -10,11 +10,7 @@ User approval modes plugin for DeepSeek Harness. Provides four approval modes to
 
 ## Changelog
 
-### 0.1.3
-
-- **Client-side per-session mode cache** — revisiting a previously-opened session now shows the cached mode on the first frame (no `'off'` flicker) and skips the `/approval-mode` roundtrip. Chip state changes (open/close menu, switch modes) no longer trigger redundant queries either.
-- **Dropped a `dsh-commands` type workaround** that the upstream `0.1.0-rc.8` line corrected (`execute`'s third parameter is `readonly EncodedImageAttachment[]`, not `AbortSignal`).
-- **`pnpm-workspace.yaml` override** pins `dsh-system-prompt` to `0.1.1-rc.2`; the previously locked `0.1.0-rc.7` is no longer published, so fresh installs needed a fix.
+See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 
 ## Demo
 
