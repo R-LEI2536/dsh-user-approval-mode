@@ -1,94 +1,163 @@
-.container {
+/* Approval-mode settings page, in the DSH settings-panel design language:
+   title + intro at the top, sub-sections below, each field a vertical
+   block (label row + control + hint) separated from its neighbours by a
+   1px `--dsw-alias-border-l2` hairline. Every colour goes through a
+   semantic alias token so the page renders correctly in light and dark. */
+
+.section {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 16px 0;
+  gap: 12px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.intro {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .subSection {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  margin-top: 8px;
+}
+
+.subSection:first-of-type {
+  margin-top: 0;
 }
 
 .subSectionHeader {
-  font-size: 13px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--dsw-text-secondary,);
   margin: 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--dsw-stroke-divider,);
+  padding: 10px 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
 }
 
+/* One settings row: head (label + reset), control, hint. The container
+   draws a 1px hairline on top so consecutive fields read as a list. */
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
-.fieldRow {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) 2fr auto;
+.head {
+  display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.fieldLabel {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.fieldLabelText {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--dsw-text-primary,);
-}
-
-.fieldDescription {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--dsw-text-secondary,);
-  /* Sits in its own row below fieldRow, so it spans the full width and
-     wraps naturally without constraining the input's vertical alignment. */
-  padding-left: 0;
-}
-
-.fieldControl {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.label {
+  flex: 1;
   min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
 }
 
-.fieldControl input,
-.fieldControl textarea,
-.dropdownTrigger {
+/* Text Reset sits on the right of the head row — same line as the label,
+   no border. The 12/18 typography matches the rest of the settings
+   design language (see ui-settings-models/fields.module.css). */
+.reset {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
   font: inherit;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-stroke-control,);
-  background: var(--dsw-surface-input,);
-  color: var(--dsw-text-primary,);
-}
-
-.fieldControl textarea {
-  font-family: var(--dsw-font-mono, monospace);
-  resize: vertical;
-  min-height: 64px;
-}
-
-.dropdownTrigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  min-width: 180px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
 
-.resetButton {
-  align-self: start;
-  margin-top: 6px;
+.reset:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.reset:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.control {
+  /* Wraps the Input primitive / dropdown trigger / textarea. The Input
+     primitive styles itself with the alias tokens; the dropdown trigger
+     and textarea pick up styles defined below. */
+  display: flex;
+}
+
+.control :global(input) {
+  max-width: 480px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* Dropdown trigger — match the Input primitive's visual language (32px
+   height, 8px radius, 1px hairline, bg-layer-3 fill). */
+.dropdownTrigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 200px;
+  max-width: 240px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dropdownTrigger:hover {
+  border-color: var(--dsw-alias-border-l3);
+}
+
+/* Multi-line approval-prompt template. */
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 480px;
+  min-height: 88px;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
 }

@@ -235,8 +235,9 @@ piece that needs manual configuration.
 ## Settings Page
 
 Open the Web UI sidebar → **Settings** → **Approval Modes** (last item, after
-Plugins) to edit the six user-facing Config fields. The page is divided
-into three sub-sections:
+Plugins) to edit the six user-facing Config fields. The page header has a
+short title and an intro paragraph; the page body is divided into three
+sub-sections:
 
 1. **Tool family classification** — one comma-separated text input per
    family (`editTools`, `shellTools`, `readOnlyTools`, `autoAllowTools`).
@@ -252,16 +253,20 @@ deliberately **deployer-only**: they live in `cordis.yml` entry config and
 are not exposed in the settings page. The runtime falls back to the cordis
 `base` for them.
 
-Each field has:
+Each field is rendered in the DSH settings-panel design language: the
+label sits on a row with a small text **Reset** on the right, the control
+below it, and a muted hint paragraph below that. Consecutive fields are
+separated by a 1px hairline (no card chrome). All colours resolve through
+`--dsw-alias-*` semantic tokens, so the page renders correctly in light
+and dark themes.
 
-- An inline description rendered on its own row below the field (sourced
-  from the schemastery field description); sits at full row width so it
-  doesn't get squeezed under the label
-- A **Reset** button on the right that clears the user override for that
-  field; the value falls back to whatever the deployer set in `cordis.yml`
-  (the composition `base` layer)
+- A text **Reset** on the right of the label row clears the user override
+  for that field; the value falls back to whatever the deployer set in
+  `cordis.yml` (the composition `base` layer).
+- The hint paragraph below each control is sourced from the schemastery
+  field description.
 - Locale-aware labels and descriptions (`en` and `zh` shipped; add more by
-  extending `src/client/locales.ts`)
+  extending `src/client/locales.ts`).
 
 ### Layering model
 

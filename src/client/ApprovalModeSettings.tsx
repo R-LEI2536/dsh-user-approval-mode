@@ -5,18 +5,18 @@
  * `scope.set()` (merge into user layer) or `scope.unset(field)` (clear user
  * override, re-inherit the cordis `base`).
  *
- * Layout: three sub-sections (Tool family classification, Sandbox policy,
- * Approval prompt). Each top-level field owns a Reset button that's always
- * rendered — reset calls `scope.unset(field)` and the value falls back to
- * the deployer's cordis entry config.
+ * Visual layout follows the DSH settings-panel design language (see
+ * ui-settings-models / ui-settings-plugins for the canonical reference):
+ * page title + intro at the top, sub-sections below, each field a
+ * vertical block (label row with a text Reset on the right, control,
+ * hint) separated from its neighbours by a 1px hairline.
  *
  * Note: `default` and `unclassified` are part of the Config schema but are
- * deliberately deployer-only — they live in `cordis.yml`, not here. The
- * runtime falls back to the cordis `base` for those two fields.
+ * deliberately deployer-only — they live in `cordis.yml`, not here.
  */
 import { useState, useEffect, useSyncExternalStore, useRef, type ReactElement } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import { Menu, Input, Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, Input } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { Config } from '../index'
 import type { ApprovalPageKey } from './locales'
@@ -75,24 +75,22 @@ interface FieldShellProps {
   children: ReactElement
 }
 
-/** Label + control + always-visible Reset button on one row, then the field
- *  description on its own row below. Putting the description on a separate
- *  full-width row gives it enough horizontal space to avoid excessive
- *  wrapping, and keeps the input from looking empty below the label. */
+/** One settings row in the DSH settings-panel design language: label + a
+ *  text Reset on the right of the same row, then the control, then the
+ *  description as a muted hint. The container draws a 1px hairline on top
+ *  so consecutive rows read as a list, not as a stack of cards. */
 function FieldShell({ label, descKey, t, onReset, resetLabel, children }: FieldShellProps) {
   const description = t(descKey)
   return (
     <div className={css.field}>
-      <div className={css.fieldRow}>
-        <div className={css.fieldLabel}>
-          <span className={css.fieldLabelText}>{label}</span>
-        </div>
-        <div className={css.fieldControl}>{children}</div>
-        <Button variant="ghost" size="sm" className={css.resetButton} onClick={onReset}>
+      <div className={css.head}>
+        <span className={css.label}>{label}</span>
+        <button type="button" className={css.reset} onClick={onReset}>
           {resetLabel}
-        </Button>
+        </button>
       </div>
-      <div className={css.fieldDescription}>{description}</div>
+      <div className={css.control}>{children}</div>
+      <p className={css.hint}>{description}</p>
     </div>
   )
 }
@@ -142,8 +140,7 @@ interface CsvInputProps {
 
 /** Editable string[] as a single comma-separated text input. Treats the value
  *  as a set: on commit, splits on comma, trims each token, drops empties,
- *  and deduplicates (first occurrence wins). Order among the survivors is
- *  preserved from the input.
+ *  and deduplicates (first occurrence wins).
  *
  *  Commit happens on blur, NOT on every keystroke. Live committing would
  *  round-trip through the settings scope on each character; the dedup/trim
@@ -206,7 +203,10 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
   }
 
   return (
-    <div className={css.container}>
+    <div className={css.section}>
+      <h2 className={css.title}>{t('nav.label')}</h2>
+      <p className={css.intro}>{t('intro')}</p>
+
       {/* ── Tool family classification ────────────────────────────────── */}
       <div className={css.subSection}>
         <h3 className={css.subSectionHeader}>{t('section.tools')}</h3>
@@ -344,6 +344,7 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           <textarea
             value={askReasonText}
             placeholder={t('askReason.placeholder')}
+            className={css.textarea}
             onChange={(e) => { setAskReasonText(e.target.value) }}
             onBlur={(e) => { commitAskReason(e.target.value) }}
           />

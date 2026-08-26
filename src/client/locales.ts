@@ -35,8 +35,11 @@ export const enPage = {
   // Sidebar nav label (settings.section slot)
   'nav.label': 'Approval Modes',
 
+  // Page intro
+  'intro': 'Configure tool classification, sandbox policy, and the approval dialog template. The default mode and unclassified strategy are set in cordis.yml.',
+
   // Sub-section headers
-  'section.tools': 'Tool family classification',
+  'section.tools': 'Tool classification',
   'section.sandbox': 'Sandbox policy',
   'section.dialog': 'Approval prompt',
 
@@ -78,6 +81,9 @@ export const enPage = {
 export const zhPage = {
   // Sidebar nav label (settings.section slot)
   'nav.label': '审批模式',
+
+  // Page intro
+  'intro': '配置工具族分类、各模式 sandbox 策略、审批弹窗文案模板。默认模式与未分类策略写在 cordis.yml 里。',
 
   // Sub-section headers
   'section.tools': '工具族分类',
