@@ -43,8 +43,8 @@ _Avoid_: "classification set", "category list"
 **autoAllowTools**:
 Tool names that bypass approval regardless of family classification. Checked BEFORE family lookup, so overlap with any family list is harmless (redundant, not conflicting).
 
-**Unclassified strategy**:
-The policy for tools in no family. Either `'ask'` (fail-safe) or `'allow'` (permissive).
+**Unclassified strategy** (deployer-only):
+The policy for tools in no family. Either `'ask'` (fail-safe) or `'allow'` (permissive). Configured in `cordis.yml` entry config; not exposed in the user settings page.
 
 **Sandbox defaults**:
 Map from each approval mode to the sandbox policy the plugin writes when switching into that mode. Three modes × three sandbox levels (`read-only` / `workspace-write` / `danger-full-access`).
@@ -52,11 +52,11 @@ Map from each approval mode to the sandbox policy the plugin writes when switchi
 **askReason**:
 Template string for the approval dialog reason text. Supports `{tool}` / `{mode}` / `{family}` placeholders. Server-side generation — the plugin has no locale signal at render time, which is why the template is configurable rather than auto-localized.
 
-**Default mode**:
-The approval mode assigned to a new session when no override exists. Lives in the settings namespace `approval-mode` as the field `default`; deployer can seed the composition base via cordis config.
+**Default mode** (deployer-only):
+The approval mode assigned to a new session when no override exists. Configured in `cordis.yml` entry config (field `default`); not exposed in the user settings page.
 
 **Settings namespace `approval-mode`**:
-The single namespace that owns all eight user-editable fields. Resolution order: schema defaults → cordis `base` → user layer. End-user overrides apply live (no restart).
+The namespace that owns the six user-editable fields plus the two deployer-only fields (`default`, `unclassified`). Resolution order: schema defaults → cordis `base` → user layer. User overrides (where applicable) apply live (no restart).
 
 **Tool classification order**:
 The full priority chain at the gate: `autoAllowTools` first, then `editTools`, then `shellTools`, then `readOnlyTools`, then `unclassified` strategy.

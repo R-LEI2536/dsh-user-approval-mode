@@ -21,7 +21,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 
 - **Four Approval Modes**: `request`, `auto-edit`, `yolo`, `off`
 - **Web UI Mode Selector**: Quick-switch chip under the input box for changing approval modes without commands
-- **Settings Page**: Configure every approval-mode option (default mode, tool family lists, unclassified strategy, per-mode sandbox policy, approval prompt template) in `Settings → Approval Modes`
+- **Settings Page**: Configure six approval-mode options (tool family lists, per-mode sandbox policy, approval prompt template) in `Settings → Approval Modes`. The default mode and the unclassified strategy remain deployer-only (set in `cordis.yml`).
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
@@ -217,7 +217,7 @@ example, switch it to Chinese, swap wording, or add your own guidance:
     - id: dsh-user-approval
       name: dsh-user-approval
       config:
-        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_dir 而非 shell'
+        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_directory 而非 shell'
 ```
 
 Available placeholders: `{tool}` (tool name), `{mode}` (current approval
@@ -235,19 +235,27 @@ piece that needs manual configuration.
 ## Settings Page
 
 Open the Web UI sidebar → **Settings** → **Approval Modes** (last item, after
-Plugins) to edit every Config field this plugin exposes. The page is
-divided into four sub-sections:
+Plugins) to edit the six user-facing Config fields. The page is divided
+into three sub-sections:
 
-1. **Default behavior** — default mode and unclassified-strategy dropdowns
-2. **Tool family classification** — one editable row-list per family
-   (`editTools`, `shellTools`, `readOnlyTools`, `autoAllowTools`)
-3. **Sandbox policy** — one dropdown per mode (`request`, `auto-edit`, `yolo`)
-4. **Approval prompt** — multi-line `askReason` template
+1. **Tool family classification** — one comma-separated text input per
+   family (`editTools`, `shellTools`, `readOnlyTools`, `autoAllowTools`).
+   The values are treated as sets: order is irrelevant, duplicates are
+   folded on commit.
+2. **Sandbox policy** — one dropdown per mode (`request`, `auto-edit`,
+   `yolo`). Dropdown labels display in English in both `en` and `zh`
+   locales (the values are technical identifiers shared with the schema).
+3. **Approval prompt** — multi-line `askReason` template
+
+The two remaining Config fields — `default` and `unclassified` — are
+deliberately **deployer-only**: they live in `cordis.yml` entry config and
+are not exposed in the settings page. The runtime falls back to the cordis
+`base` for them.
 
 Each field has:
 
-- A `?` tooltip that explains what it does (sourced from the schemastery
-  field description)
+- An inline description rendered directly under the label (sourced from
+  the schemastery field description)
 - A **Reset** button on the right that clears the user override for that
   field; the value falls back to whatever the deployer set in `cordis.yml`
   (the composition `base` layer)
@@ -271,18 +279,21 @@ the user override (so the deployer's base re-emerges).
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `default` | mode dropdown | Mode assigned to new sessions |
-| `unclassified` | `'ask'` / `'allow'` dropdown | Behavior for tools not in any family |
-| `editTools` | string list | Auto-approved under auto-edit |
-| `shellTools` | string list | Always require approval under request and auto-edit |
-| `readOnlyTools` | string list | Always allowed (any mode) |
-| `autoAllowTools` | string list | Bypass approval regardless of family |
+| `editTools` | comma-separated text (set) | Auto-approved under auto-edit |
+| `shellTools` | comma-separated text (set) | Always require approval under request and auto-edit |
+| `readOnlyTools` | comma-separated text (set) | Always allowed (any mode) |
+| `autoAllowTools` | comma-separated text (set) | Bypass approval regardless of family |
 | `sandboxDefaults` | per-mode dropdown | Sandbox policy when switching into each mode |
 | `askReason` | textarea | Approval dialog template (placeholders: `{tool}` / `{mode}` / `{family}`) |
 
+Deployer-only (not shown in the page; set in `cordis.yml`):
+
+- `default` — mode assigned to new sessions
+- `unclassified` — `'ask'` / `'allow'` strategy for tools not in any family
+
 ### Effect timing
 
-All eight fields are **live** — they take effect on the next
+The six user-editable fields are **live** — they take effect on the next
 `tools/pre-execute` invocation, no DSH restart required. The runtime gate
 re-reads the settings scope on every tool call.
 
@@ -310,7 +321,7 @@ This uses default values:
 - `default`: `off` (plugin disabled by default)
 - `editTools`: `['write', 'edit', 'str_replace_editor']`
 - `shellTools`: `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']`
-- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_dir']`
+- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']`
 - `autoAllowTools`: `['ask_user_question', 'exit_plan_mode']`
 - `unclassified`: `ask`
 
@@ -329,7 +340,7 @@ You can customize the plugin behavior in your agent preset:
         # Custom tool classifications
         editTools: ['write', 'edit', 'str_replace_editor']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
-        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_dir']
+        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']
         autoAllowTools: ['ask_user_question', 'exit_plan_mode']
         
         # Strategy for unclassified tools: 'ask' (safer) or 'allow' (faster)
@@ -359,7 +370,7 @@ You can customize the plugin behavior in your agent preset:
 | `default` | string | `off` | Default approval mode for new sessions. Options: `request`, `auto-edit`, `yolo`, `off` |
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor']` | Tools classified as "edit" family (file modifications) |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | Tools classified as "shell" family (command execution) |
-| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_dir']` | Tools classified as "readonly" family (always allowed) |
+| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']` | Tools classified as "readonly" family (always allowed) |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode']` | Tools that always bypass approval |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
@@ -368,7 +379,7 @@ You can customize the plugin behavior in your agent preset:
 ### Default Ask Reason
 
 ```
-approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_dir instead of shell
+approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell
 ```
 
 ## Tool Family Classification
@@ -379,7 +390,7 @@ The plugin automatically classifies tools into four families:
 |--------|--------------|----------|
 | **Edit** | `write`, `edit`, `str_replace_editor` | File modification tools |
 | **Shell** | `bash`, `pwsh`, `tool:bash`, `tool:pwsh` | Command execution tools |
-| **Read-Only** | `read`, `glob`, `grep`, `read_image`, `list_dir` | Safe browsing tools (always allowed) |
+| **Read-Only** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write` | Safe browsing tools (always allowed) |
 | **Other** | *all other tools* | Unclassified tools, behavior depends on `unclassified` config |
 
 ## How It Works
@@ -407,7 +418,7 @@ The plugin automatically classifies tools into four families:
 - `@deepseek-ai/dsh-client-locale`: Locale registry
 - `@deepseek-ai/dsh-client-ui-conversation`: Composer slot (`conversation.input.left`)
 - `@deepseek-ai/dsh-client-ui-settings`: Settings slot (`settings.section`) + scope service
-- `@deepseek-ai/dsh-client-ui-primitives`: Button / Input / Menu / Tooltip primitives
+- `@deepseek-ai/dsh-client-ui-primitives`: Button / Input / Menu primitives
 - `@deepseek-ai/dsh-client-ui-slots`: Slot registry
 - `@deepseek-ai/schemastery`: Configuration schema validation
 - `react`: UI rendering

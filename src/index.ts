@@ -62,7 +62,7 @@ export interface Config {
   editTools?: string[]
   /** shell 族工具名（默认 bash/pwsh 及原始变体）。 */
   shellTools?: string[]
-  /** 只读工具名（默认 read/glob/grep/read_image/list_dir）；任何模式下免审。 */
+  /** 只读工具名（默认 read/glob/grep/read_image/list_directory/todo_write）；任何模式下免审。 */
   readOnlyTools?: string[]
   /** 永远免审的控制工具（默认 ask_user_question/exit_plan_mode）。 */
   autoAllowTools?: string[]
@@ -85,7 +85,7 @@ export const Config: Schema<Config> = Schema.object({
     .default(['bash', 'pwsh', 'tool:bash', 'tool:pwsh'])
     .description('Tools classified as the "shell" family — command execution. Always require approval under request and auto-edit modes.'),
   readOnlyTools: Schema.array(Schema.string())
-    .default(['read', 'glob', 'grep', 'read_image', 'list_dir'])
+    .default(['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'])
     .description('Tools classified as the "read-only" family. Always allowed regardless of mode.'),
   autoAllowTools: Schema.array(Schema.string())
     .default(['ask_user_question', 'exit_plan_mode'])
@@ -101,7 +101,7 @@ export const Config: Schema<Config> = Schema.object({
     })
     .description('Sandbox policy the plugin writes when switching into each mode. The "off" mode restores the composition default instead.'),
   askReason: Schema.string()
-    .default('approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_dir instead of shell')
+    .default('approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell')
     .description('Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other).'),
 })
 
@@ -130,11 +130,11 @@ export function apply(ctx: Context, config: Config): void {
     default: config.default ?? 'off',
     editTools: config.editTools ?? ['write', 'edit', 'str_replace_editor'],
     shellTools: config.shellTools ?? ['bash', 'pwsh', 'tool:bash', 'tool:pwsh'],
-    readOnlyTools: config.readOnlyTools ?? ['read', 'glob', 'grep', 'read_image', 'list_dir'],
+    readOnlyTools: config.readOnlyTools ?? ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'],
     autoAllowTools: config.autoAllowTools ?? ['ask_user_question', 'exit_plan_mode'],
     unclassified: config.unclassified ?? 'ask',
     sandboxDefaults: config.sandboxDefaults ?? { request: 'workspace-write', 'auto-edit': 'workspace-write', yolo: 'workspace-write' },
-    askReason: config.askReason ?? 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_dir instead of shell',
+    askReason: config.askReason ?? 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',
   }
 
   // 组合默认 sandbox：无 session 覆盖时沙箱旋钮应落回的值（off 联动写回它）。

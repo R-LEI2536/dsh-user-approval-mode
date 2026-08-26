@@ -20,7 +20,7 @@
 
 - **四种审批模式**：`request`、`auto-edit`、`yolo`、`off`
 - **Web UI模式选择器**：输入框下方的快捷芯片，无需命令即可切换审批模式
-- **设置页面**：在 `设置 → 审批模式` 里配置全部审批选项（默认模式、工具族名单、未分类策略、各模式 sandbox 策略、审批弹窗文案模板）
+- **设置页面**：在 `设置 → 审批模式` 里配置六项审批选项（工具族名单、各模式 sandbox 策略、审批弹窗文案模板）。默认模式与未分类策略仅由部署方配置（在 `cordis.yml` 中设置）。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
@@ -199,7 +199,7 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
     - id: dsh-user-approval
       name: dsh-user-approval
       config:
-        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_dir 而非 shell'
+        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_directory 而非 shell'
 ```
 
 可用占位符：`{tool}`（工具名）、`{mode}`（当前审批模式）、
@@ -215,17 +215,23 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 ## 设置页面
 
 打开 Web UI 侧边栏 → **设置** → **审批模式**（最底部，Plugins 之后）即可
-编辑本插件暴露的全部 Config 字段。页面分为四个子区块：
+编辑本插件暴露的六个用户可编辑 Config 字段。页面分为三个子区块：
 
-1. **默认行为** —— 默认模式、未分类策略下拉框
-2. **工具族分类** —— 每个族（`editTools`、`shellTools`、`readOnlyTools`、
-   `autoAllowTools`）一个可编辑的行列表
-3. **Sandbox 策略** —— 每个模式（`request`、`auto-edit`、`yolo`）一个下拉框
-4. **审批弹窗** —— `askReason` 多行文本模板
+1. **工具族分类** —— 每个族（`editTools`、`shellTools`、`readOnlyTools`、
+   `autoAllowTools`）一个逗号分隔的文本输入框。值按集合处理：顺序无
+   所谓，提交时自动去重。
+2. **Sandbox 策略** —— 每个模式（`request`、`auto-edit`、`yolo`）一个
+   下拉框。下拉标签在 `en` 与 `zh` 两种 locale 下都显示英文（值是与
+   schema 共用的技术标识符）。
+3. **审批弹窗** —— `askReason` 多行文本模板
+
+其余两个 Config 字段（`default`、`unclassified`）刻意保持为**仅部署方可配**：
+写在 `cordis.yml` 的 entry config 里、不出现在设置页面。运行时这两个值
+直接取自 cordis `base`。
 
 每个字段都带：
 
-- `?` 提示符 —— 鼠标悬停查看字段作用（来自 schemastery 字段描述）
+- 内联描述 —— 直接显示在 label 下方的小字（来自 schemastery 字段描述）
 - **重置**按钮 —— 清除该字段的用户覆盖、恢复到部署方在 `cordis.yml` 中
   设置的值（即 settings 的 `base` 层）
 - 本地化标签与描述（默认 `en` + `zh`；增加语种请扩展 `src/client/locales.ts`）
@@ -245,19 +251,22 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `default` | 模式下拉框 | 新会话的默认模式 |
-| `unclassified` | `'ask'` / `'allow'` 下拉框 | 工具不在任何族时的行为 |
-| `editTools` | 字符串列表 | auto-edit 模式下自动放行 |
-| `shellTools` | 字符串列表 | request / auto-edit 模式下都要审批 |
-| `readOnlyTools` | 字符串列表 | 任何模式都放行 |
-| `autoAllowTools` | 字符串列表 | 与族无关、直接绕过审批 |
+| `editTools` | 逗号分隔文本（集合） | auto-edit 模式下自动放行 |
+| `shellTools` | 逗号分隔文本（集合） | request / auto-edit 模式下都要审批 |
+| `readOnlyTools` | 逗号分隔文本（集合） | 任何模式都放行 |
+| `autoAllowTools` | 逗号分隔文本（集合） | 与族无关、直接绕过审批 |
 | `sandboxDefaults` | 每模式下拉框 | 切到该模式时联动写入的 sandbox 策略 |
 | `askReason` | 多行文本 | 审批弹窗文案模板（占位符：`{tool}` / `{mode}` / `{family}`） |
 
+仅部署方可配（不在页面展示，写在 `cordis.yml`）：
+
+- `default` —— 新会话的默认模式
+- `unclassified` —— `'ask'` / `'allow'`，工具不在任何族时的行为
+
 ### 生效时机
 
-全部 8 个字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，无需重启 DSH。
-运行时闸门每次工具调用都会重读 settings 范围。
+六个用户可编辑字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，
+无需重启 DSH。运行时闸门每次工具调用都会重读 settings 范围。
 
 ### 族名单之间的重叠
 
@@ -281,7 +290,7 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 - `default`: `off`（默认禁用插件）
 - `editTools`: `['write', 'edit', 'str_replace_editor']`
 - `shellTools`: `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']`
-- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_dir']`
+- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']`
 - `autoAllowTools`: `['ask_user_question', 'exit_plan_mode']`
 - `unclassified`: `ask`
 
@@ -300,7 +309,7 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
         # 自定义工具分类
         editTools: ['write', 'edit', 'str_replace_editor']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
-        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_dir']
+        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']
         autoAllowTools: ['ask_user_question', 'exit_plan_mode']
         
         # 未分类工具的策略：'ask'（更安全）或 'allow'（更快）
@@ -330,7 +339,7 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 | `default` | string | `off` | 新会话的默认审批模式。选项：`request`、`auto-edit`、`yolo`、`off` |
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor']` | 分类为"编辑"族的工具（文件修改） |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | 分类为"Shell"族的工具（命令执行） |
-| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_dir']` | 分类为"只读"族的工具（始终允许） |
+| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']` | 分类为"只读"族的工具（始终允许） |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode']` | 始终绕过审批的工具 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
@@ -339,7 +348,7 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 ### 默认审批原因
 
 ```
-approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_dir instead of shell
+approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell
 ```
 
 ## 工具族分类
@@ -350,7 +359,7 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
 |------|---------|------|
 | **编辑** | `write`, `edit`, `str_replace_editor` | 文件修改工具 |
 | **Shell** | `bash`, `pwsh`, `tool:bash`, `tool:pwsh` | 命令执行工具 |
-| **只读** | `read`, `glob`, `grep`, `read_image`, `list_dir` | 安全浏览工具（始终允许） |
+| **只读** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write` | 安全浏览工具（始终允许） |
 | **其他** | *所有其他工具* | 未分类工具，行为取决于 `unclassified` 配置 |
 
 ## 工作原理

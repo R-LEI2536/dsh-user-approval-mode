@@ -5,9 +5,10 @@
  *
  * Both registrations bind against the `approval-mode` settings namespace; the
  * chip routes through `/approval-mode` slash command (per-session mode switch),
- * while the settings page binds the user-editable section (all eight Config
- * fields). Settings writes flow through the settings RPC back to the server
- * plugin's `installSettingsSection` registration.
+ * while the settings page binds the user-editable section (six of the eight
+ * Config fields — `default` and `unclassified` stay deployer-only). Settings
+ * writes flow through the settings RPC back to the server plugin's
+ * `installSettingsSection` registration.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the composer dock seat).
@@ -121,11 +122,12 @@ export function apply(ctx: ClientContext): void {
     }),
   }, ApprovalModeChip))
 
-  // ── Settings page (full-page editor for all eight Config fields) ──────
+  // ── Settings page (full-page editor for the six user-editable fields) ──
   // The page lives at the bottom of the sidebar (`order: 1100`, after the
   // Plugins section). It binds the same `approval-mode` settings namespace
   // that the server plugin's `installSettingsSection` exposed; user edits go
   // through `scope.set`/`scope.unset` and are persisted to the settings document.
+  // `default` and `unclassified` remain in the schema but are not editable here.
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: SETTINGS_ID,

@@ -1,20 +1,24 @@
 /**
- * ApprovalModeSettings: the settings.section page for editing all eight
- * Config fields. Bound to the `approval-mode` settings namespace via the
- * injected scope; reads via `scope.getSnapshot()`, writes via `scope.set()`
- * (merge into user layer) or `scope.unset(field)` (clear user override,
- * re-inherit the cordis `base`).
+ * ApprovalModeSettings: the settings.section page for editing the six
+ * user-facing Config fields. Bound to the `approval-mode` settings namespace
+ * via the injected scope; reads via `scope.getSnapshot()`, writes via
+ * `scope.set()` (merge into user layer) or `scope.unset(field)` (clear user
+ * override, re-inherit the cordis `base`).
  *
- * Layout: four sub-sections (Default behavior, Tool family classification,
- * Sandbox policy, Approval prompt). Each top-level field owns a Reset button
- * that's always rendered — reset calls `scope.unset(field)` and the value
- * falls back to the deployer's cordis entry config.
+ * Layout: three sub-sections (Tool family classification, Sandbox policy,
+ * Approval prompt). Each top-level field owns a Reset button that's always
+ * rendered — reset calls `scope.unset(field)` and the value falls back to
+ * the deployer's cordis entry config.
+ *
+ * Note: `default` and `unclassified` are part of the Config schema but are
+ * deliberately deployer-only — they live in `cordis.yml`, not here. The
+ * runtime falls back to the cordis `base` for those two fields.
  */
 import { useState, useEffect, useSyncExternalStore, useRef, type ReactElement } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import { Menu, Input, Button, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, Input, Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
-import type { Config, ApprovalMode } from '../index'
+import type { Config } from '../index'
 import type { ApprovalPageKey } from './locales'
 import css from './ApprovalModeSettings.module.css'
 
@@ -32,26 +36,17 @@ export type ApprovalModeSettingsProps =
   & InjectFace<ApprovalModeSettingsInjected>
   & { t: (key: ApprovalPageKey) => string }
 
-// ─── ApprovalMode enum labels (for the default dropdown) ────────────────────
-
-const APPROVAL_MODE_ITEMS: readonly { id: ApprovalMode; label: string }[] = [
-  { id: 'off', label: 'mode.off' },
-  { id: 'request', label: 'mode.request' },
-  { id: 'auto-edit', label: 'mode.auto-edit' },
-  { id: 'yolo', label: 'mode.yolo' },
-]
-
 // ─── Defaults (mirror src/index.ts; used only when value is undefined) ──────
 
 const FALLBACK: Required<Config> = {
   default: 'off',
   editTools: ['write', 'edit', 'str_replace_editor'],
   shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh'],
-  readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_dir'],
+  readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'],
   autoAllowTools: ['ask_user_question', 'exit_plan_mode'],
   unclassified: 'ask',
   sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', yolo: 'workspace-write' },
-  askReason: 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_dir instead of shell',
+  askReason: 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',
 }
 
 /** Normalize a partial Config (TS view) into a fully-populated one. */
@@ -80,17 +75,18 @@ interface FieldShellProps {
   children: ReactElement
 }
 
-/** Label + ? tooltip + control + always-visible Reset button. */
+/** Label + inline description + control + always-visible Reset button. The
+ *  description is rendered directly under the label (not behind a tooltip) so
+ *  its semantics are visible without a hover gesture. */
 function FieldShell({ label, descKey, t, onReset, resetLabel, children }: FieldShellProps) {
+  const description = t(descKey)
   return (
     <div className={css.field}>
       <div className={css.fieldLabel}>
         <span className={css.fieldLabelText}>{label}</span>
+        <span className={css.fieldDescription}>{description}</span>
       </div>
       <div className={css.fieldControl}>{children}</div>
-      <Tooltip label={t(descKey)} side="right">
-        <button type="button" className={css.helpIcon} aria-label="help">?</button>
-      </Tooltip>
       <Button variant="ghost" size="sm" className={css.resetButton} onClick={onReset}>
         {resetLabel}
       </Button>
@@ -135,61 +131,37 @@ function EnumDropdown<T extends string>({ value, items, resolveLabel, onChange }
   )
 }
 
-interface RowListProps {
+interface CsvInputProps {
   value: string[]
   onChange: (next: string[]) => void
-  t: (key: ApprovalPageKey) => string
+  placeholder: string
 }
 
-/** Editable string[] as a vertical list of rows + an Add row at the bottom. */
-function RowList({ value, onChange, t }: RowListProps) {
+/** Editable string[] as a single comma-separated text input. Treats the value
+ *  as a set: on commit, splits on comma, trims each token, drops empties,
+ *  and deduplicates (first occurrence wins). Order among the survivors is
+ *  preserved from the input. */
+function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
   // Local copy mirrors the value; commits back via onChange on each edit.
-  const [rows, setRows] = useState<string[]>(value)
-  useEffect(() => { setRows(value) }, [value])
+  const [text, setText] = useState(value.join(', '))
+  useEffect(() => { setText(value.join(', ')) }, [value])
 
-  const commit = (next: string[]): void => {
-    const trimmed = next.map(s => s.trim()).filter(s => s.length > 0)
-    onChange(trimmed)
-  }
-
-  const updateRow = (i: number, v: string): void => {
-    const next = [...rows]
-    next[i] = v
-    setRows(next)
-    commit(next)
-  }
-
-  const removeRow = (i: number): void => {
-    const next = rows.filter((_, idx) => idx !== i)
-    setRows(next)
-    commit(next)
-  }
-
-  const addRow = (): void => {
-    const next = [...rows, '']
-    setRows(next)
-    commit(next)
+  const commit = (next: string): void => {
+    const parts = [...new Set(
+      next.split(',').map(s => s.trim()).filter(s => s.length > 0),
+    )]
+    onChange(parts)
   }
 
   return (
-    <>
-      {rows.map((row, i) => (
-        <div key={i} className={css.row}>
-          <Input
-            value={row}
-            placeholder={t('row.placeholder')}
-            onChange={(e) => { updateRow(i, e.target.value) }}
-          />
-          <Button variant="ghost" size="sm" onClick={() => { removeRow(i) }}>
-            {t('row.remove')}
-          </Button>
-        </div>
-      ))}
-      <Button variant="outline" size="sm" className={css.rowAdd} onClick={addRow}>
-        {t('row.add')}
-      </Button>
-      <div className={css.hint}>{t('row.toolsHint')}</div>
-    </>
+    <Input
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setText(e.target.value)
+        commit(e.target.value)
+      }}
+    />
   )
 }
 
@@ -217,44 +189,6 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
 
   return (
     <div className={css.container}>
-      {/* ── Default behavior ──────────────────────────────────────────── */}
-      <div className={css.subSection}>
-        <h3 className={css.subSectionHeader}>{t('section.default')}</h3>
-
-        <FieldShell
-          label={t('field.default')}
-          descKey="desc.default"
-          t={t}
-          onReset={() => { reset('default') }}
-          resetLabel={t('reset.label')}
-        >
-          <EnumDropdown<ApprovalMode>
-            value={value.default}
-            items={APPROVAL_MODE_ITEMS}
-            resolveLabel={(id) => t(`mode.${id}` as ApprovalPageKey)}
-            onChange={(next) => { void scope.set('default', next) }}
-          />
-        </FieldShell>
-
-        <FieldShell
-          label={t('field.unclassified')}
-          descKey="desc.unclassified"
-          t={t}
-          onReset={() => { reset('unclassified') }}
-          resetLabel={t('reset.label')}
-        >
-          <EnumDropdown<'ask' | 'allow'>
-            value={value.unclassified}
-            items={[
-              { id: 'ask', label: t('unclassified.ask') },
-              { id: 'allow', label: t('unclassified.allow') },
-            ]}
-            resolveLabel={(id) => id === 'ask' ? t('unclassified.ask') : t('unclassified.allow')}
-            onChange={(next) => { void scope.set('unclassified', next) }}
-          />
-        </FieldShell>
-      </div>
-
       {/* ── Tool family classification ────────────────────────────────── */}
       <div className={css.subSection}>
         <h3 className={css.subSectionHeader}>{t('section.tools')}</h3>
@@ -266,7 +200,11 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           onReset={() => { reset('editTools') }}
           resetLabel={t('reset.label')}
         >
-          <RowList value={value.editTools} onChange={(v) => { void scope.set('editTools', v) }} t={t} />
+          <CsvInput
+            value={value.editTools}
+            onChange={(v) => { void scope.set('editTools', v) }}
+            placeholder={t('csv.placeholder')}
+          />
         </FieldShell>
 
         <FieldShell
@@ -276,7 +214,11 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           onReset={() => { reset('shellTools') }}
           resetLabel={t('reset.label')}
         >
-          <RowList value={value.shellTools} onChange={(v) => { void scope.set('shellTools', v) }} t={t} />
+          <CsvInput
+            value={value.shellTools}
+            onChange={(v) => { void scope.set('shellTools', v) }}
+            placeholder={t('csv.placeholder')}
+          />
         </FieldShell>
 
         <FieldShell
@@ -286,7 +228,11 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           onReset={() => { reset('readOnlyTools') }}
           resetLabel={t('reset.label')}
         >
-          <RowList value={value.readOnlyTools} onChange={(v) => { void scope.set('readOnlyTools', v) }} t={t} />
+          <CsvInput
+            value={value.readOnlyTools}
+            onChange={(v) => { void scope.set('readOnlyTools', v) }}
+            placeholder={t('csv.placeholder')}
+          />
         </FieldShell>
 
         <FieldShell
@@ -296,7 +242,11 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           onReset={() => { reset('autoAllowTools') }}
           resetLabel={t('reset.label')}
         >
-          <RowList value={value.autoAllowTools} onChange={(v) => { void scope.set('autoAllowTools', v) }} t={t} />
+          <CsvInput
+            value={value.autoAllowTools}
+            onChange={(v) => { void scope.set('autoAllowTools', v) }}
+            placeholder={t('csv.placeholder')}
+          />
         </FieldShell>
       </div>
 
