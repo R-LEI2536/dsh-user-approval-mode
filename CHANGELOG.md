@@ -5,12 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Pending — pending 0.2.0 release
-
-> Once the work below passes testing, the `[Unreleased]` heading is renamed to
-> `[0.2.0] - YYYY-MM-DD` and `package.json` is bumped from `0.1.3`.
+## [0.2.0] - 2026-08-26
 
 ### Added
 
@@ -22,12 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`cfg` is settings-driven** — the previously frozen cordis config is now a thunk that reads the resolved settings section on every `tools/pre-execute`, so edits to `editTools` / `shellTools` / `readOnlyTools` / `autoAllowTools` / `sandboxDefaults` / `askReason` all take effect on the next tool call without a restart. The deployer-only `default` and `unclassified` fields still layer over the cordis `base` via the same scope; their values flow through `cfgThunk()` with `??` fallbacks.
 - **`installSettingsSection` schema** is the full `Config` (previously narrowed to `{ default }`); the previous user override on `default` remains valid under the broader shape.
 - **Schema descriptions** are now attached to every Config field via `schemastery .description(...)`; the client page renders them as the hint paragraph under each field's control.
-- **Tool family widgets** are compact comma-separated text inputs (`CsvInput`) instead of row lists — one input per family, set semantics (trim each token, drop empties, deduplicate on commit). The placeholder `{write, edit, str_replace_editor}` uses set notation to signal that order is irrelevant.
+- **Tool family widgets** are compact comma-separated text inputs (`CsvInput`) instead of row lists — one input per family, set semantics (trim each token, drop empties, deduplicate on commit). The placeholder `{write, edit, str_replace_editor}` uses set notation to signal that order is irrelevant. Commits defer to blur so the caret stays where the user puts it.
 - **Sandbox dropdown labels** display in English (`Read-only` / `Workspace write` / `Danger full access`) in both `en` and `zh` locales — these are technical identifiers shared with the schema values.
 - **Settings page no longer exposes `default` / `unclassified`** — those two are deployer-only. Page renders three sub-sections (Tool classification, Sandbox policy, Approval prompt) instead of four.
-- **Text inputs defer commit to blur** — `CsvInput` and the `askReason` textarea hold the in-progress text in local state and only write to the settings scope on blur, so the caret no longer snaps to the end on every keystroke.
-- **Settings page restyled to the DSH settings-panel design language** — page title + intro at the top, fields rendered as vertical blocks (label row with a 12px text Reset on the right / control / hint paragraph) separated by 1px `--dsw-alias-border-l2` hairlines. All colours resolve through `--dsw-alias-*` semantic tokens so light and dark themes both render correctly. Reset is a text button (was a `ghost` Button primitive).
 - **`readOnlyTools` schema default aligned with `cordis.patch.yml`** — was `['read', 'glob', 'grep', 'read_image', 'list_dir']`, now `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']`. Fixes a pre-existing drift where the schema default and the runtime cordis bundle differed. The settings page and the runtime gate both pick up the new default immediately. The `askReason` template default mirrors the change (`list_dir` → `list_directory`) so the dialog advice matches the runtime's safe list.
+- **Settings page restyled to the DSH settings-panel design language** — page title + intro at the top, sub-sections rendered as cards (`--dsw-alias-border-l2`, `border-radius:10px`, `--dsw-alias-bg-base`) with fields inside, dropdown triggers carry a chevron that rotates 180° when open. All colours resolve through `--dsw-alias-*` semantic tokens so light and dark themes both render correctly. Tool family inputs and the approval-prompt textarea fill the card's content width (no more empty column on the right).
 
 ### Documentation
 
