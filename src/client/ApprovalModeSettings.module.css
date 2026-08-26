@@ -1,0 +1,112 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px 0;
+}
+
+.subSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.subSectionHeader {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dsw-text-secondary,);
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--dsw-stroke-divider,);
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) 2fr auto auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+}
+
+.fieldLabelText {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-text-primary,);
+}
+
+.helpIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--dsw-stroke-control,);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-text-secondary,);
+  cursor: help;
+}
+
+.fieldControl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fieldControl input,
+.fieldControl textarea,
+.dropdownTrigger {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-stroke-control,);
+  background: var(--dsw-surface-input,);
+  color: var(--dsw-text-primary,);
+}
+
+.fieldControl textarea {
+  font-family: var(--dsw-font-mono, monospace);
+  resize: vertical;
+  min-height: 64px;
+}
+
+.dropdownTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 180px;
+  cursor: pointer;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.rowAdd {
+  align-self: start;
+  margin-top: 4px;
+}
+
+.resetButton {
+  align-self: start;
+  margin-top: 6px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--dsw-text-secondary,);
+  margin-top: 4px;
+}

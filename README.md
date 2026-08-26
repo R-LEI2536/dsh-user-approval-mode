@@ -21,11 +21,11 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 
 - **Four Approval Modes**: `request`, `auto-edit`, `yolo`, `off`
 - **Web UI Mode Selector**: Quick-switch chip under the input box for changing approval modes without commands
+- **Settings Page**: Configure every approval-mode option (default mode, tool family lists, unclassified strategy, per-mode sandbox policy, approval prompt template) in `Settings → Approval Modes`
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
-- **In-Memory State**: Approval mode stored in memory, resets to default on DSH restart
-- **Settings Integration**: Configure default approval mode for new sessions
+- **In-Memory State**: Per-session mode stored in memory, resets to default on DSH restart
 - **Slash Command**: Switch modes via `/approval-mode` command
 
 ## Approval Modes
@@ -232,6 +232,70 @@ localized via DSH's locale service (`src/client/locales.ts`), so the chip
 labels already follow the UI language automatically — `askReason` is the one
 piece that needs manual configuration.
 
+## Settings Page
+
+Open the Web UI sidebar → **Settings** → **Approval Modes** (last item, after
+Plugins) to edit every Config field this plugin exposes. The page is
+divided into four sub-sections:
+
+1. **Default behavior** — default mode and unclassified-strategy dropdowns
+2. **Tool family classification** — one editable row-list per family
+   (`editTools`, `shellTools`, `readOnlyTools`, `autoAllowTools`)
+3. **Sandbox policy** — one dropdown per mode (`request`, `auto-edit`, `yolo`)
+4. **Approval prompt** — multi-line `askReason` template
+
+Each field has:
+
+- A `?` tooltip that explains what it does (sourced from the schemastery
+  field description)
+- A **Reset** button on the right that clears the user override for that
+  field; the value falls back to whatever the deployer set in `cordis.yml`
+  (the composition `base` layer)
+- Locale-aware labels and descriptions (`en` and `zh` shipped; add more by
+  extending `src/client/locales.ts`)
+
+### Layering model
+
+The settings namespace `approval-mode` resolves a value through three
+layers:
+
+```
+schema defaults  →  cordis `base` (deployer's cordis.yml)  →  user override
+```
+
+When the user has not touched a field, the value is the deployer's cordis
+config. When the user has edited a field, their value wins. Reset clears
+the user override (so the deployer's base re-emerges).
+
+### What the user can edit
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `default` | mode dropdown | Mode assigned to new sessions |
+| `unclassified` | `'ask'` / `'allow'` dropdown | Behavior for tools not in any family |
+| `editTools` | string list | Auto-approved under auto-edit |
+| `shellTools` | string list | Always require approval under request and auto-edit |
+| `readOnlyTools` | string list | Always allowed (any mode) |
+| `autoAllowTools` | string list | Bypass approval regardless of family |
+| `sandboxDefaults` | per-mode dropdown | Sandbox policy when switching into each mode |
+| `askReason` | textarea | Approval dialog template (placeholders: `{tool}` / `{mode}` / `{family}`) |
+
+### Effect timing
+
+All eight fields are **live** — they take effect on the next
+`tools/pre-execute` invocation, no DSH restart required. The runtime gate
+re-reads the settings scope on every tool call.
+
+### Overlap between family lists
+
+`editTools`, `shellTools`, and `readOnlyTools` should be **mutually
+exclusive** — a tool name should appear in at most one family list. The
+UI shows a hint reminding you of this; if you accidentally put a tool in
+two lists anyway, the runtime resolves it deterministically (priority:
+`edit > shell > readonly`). `autoAllowTools` is exempt from this rule:
+it is checked first, so overlap with any family list is harmless
+(redundant, not conflicting).
+
 ## Configuration
 
 ### Basic Usage (with all defaults)
@@ -338,7 +402,15 @@ The plugin automatically classifies tools into four families:
 - `@deepseek-ai/dsh-settings`: Settings integration
 - `@deepseek-ai/dsh-commands`: Command registration
 - `@deepseek-ai/dsh-session-projection`: Session projection for UI
+- `@deepseek-ai/dsh-api-remotes`: Client RPC
+- `@deepseek-ai/dsh-client-runtime`: Client context and runtime services
+- `@deepseek-ai/dsh-client-locale`: Locale registry
+- `@deepseek-ai/dsh-client-ui-conversation`: Composer slot (`conversation.input.left`)
+- `@deepseek-ai/dsh-client-ui-settings`: Settings slot (`settings.section`) + scope service
+- `@deepseek-ai/dsh-client-ui-primitives`: Button / Input / Menu / Tooltip primitives
+- `@deepseek-ai/dsh-client-ui-slots`: Slot registry
 - `@deepseek-ai/schemastery`: Configuration schema validation
+- `react`: UI rendering
 - `dsh-tool-list-dir`: Recommended read-only directory browsing tool
 
 ## Related Projects

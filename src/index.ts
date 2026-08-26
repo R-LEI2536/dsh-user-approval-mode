@@ -75,20 +75,34 @@ export interface Config {
 }
 
 export const Config: Schema<Config> = Schema.object({
-  default: Schema.union([...APPROVAL_MODES] as ApprovalMode[]).default('off'),
-  editTools: Schema.array(Schema.string()).default(['write', 'edit', 'str_replace_editor']),
-  shellTools: Schema.array(Schema.string()).default(['bash', 'pwsh', 'tool:bash', 'tool:pwsh']),
-  readOnlyTools: Schema.array(Schema.string()).default(['read', 'glob', 'grep', 'read_image', 'list_dir']),
-  autoAllowTools: Schema.array(Schema.string()).default(['ask_user_question', 'exit_plan_mode']),
-  unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[]).default('ask'),
-  sandboxDefaults: Schema.dict(Schema.union(['read-only', 'workspace-write', 'danger-full-access'] as ('read-only' | 'workspace-write' | 'danger-full-access')[])).default({
-    request: 'workspace-write',
-    'auto-edit': 'workspace-write',
-    yolo: 'workspace-write',
-  }),
-  askReason: Schema.string().default(
-    'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_dir instead of shell',
-  ),
+  default: Schema.union([...APPROVAL_MODES] as ApprovalMode[])
+    .default('off')
+    .description('The approval mode assigned to new sessions. Each session can still be switched at runtime via the composer chip.'),
+  editTools: Schema.array(Schema.string())
+    .default(['write', 'edit', 'str_replace_editor'])
+    .description('Tools classified as the "edit" family — file modifications. Auto-approved under auto-edit mode.'),
+  shellTools: Schema.array(Schema.string())
+    .default(['bash', 'pwsh', 'tool:bash', 'tool:pwsh'])
+    .description('Tools classified as the "shell" family — command execution. Always require approval under request and auto-edit modes.'),
+  readOnlyTools: Schema.array(Schema.string())
+    .default(['read', 'glob', 'grep', 'read_image', 'list_dir'])
+    .description('Tools classified as the "read-only" family. Always allowed regardless of mode.'),
+  autoAllowTools: Schema.array(Schema.string())
+    .default(['ask_user_question', 'exit_plan_mode'])
+    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting).'),
+  unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])
+    .default('ask')
+    .description('Strategy for tools that fall in no family: "ask" (fail-safe, default) or "allow" (permissive).'),
+  sandboxDefaults: Schema.dict(Schema.union(['read-only', 'workspace-write', 'danger-full-access'] as ('read-only' | 'workspace-write' | 'danger-full-access')[]))
+    .default({
+      request: 'workspace-write',
+      'auto-edit': 'workspace-write',
+      yolo: 'workspace-write',
+    })
+    .description('Sandbox policy the plugin writes when switching into each mode. The "off" mode restores the composition default instead.'),
+  askReason: Schema.string()
+    .default('approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_dir instead of shell')
+    .description('Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other).'),
 })
 
 /**
@@ -111,7 +125,8 @@ export function setApprovalMode(session: Session, mode: ApprovalMode): void {
 }
 
 export function apply(ctx: Context, config: Config): void {
-  const cfg = {
+  // 部署方的 cordis entry 配置：作为 settings 的 `base` 层、在 settings 服务尚未挂载前作为回退值。
+  const entryConfig: Config = {
     default: config.default ?? 'off',
     editTools: config.editTools ?? ['write', 'edit', 'str_replace_editor'],
     shellTools: config.shellTools ?? ['bash', 'pwsh', 'tool:bash', 'tool:pwsh'],
@@ -128,22 +143,25 @@ export function apply(ctx: Context, config: Config): void {
   const shell = ctx.get('shell') as { sandboxMode?: string } | undefined
   const compositionDefaultSandbox = sandboxPolicy?.defaultMode ?? shell?.sandboxMode ?? 'workspace-write'
 
-  // 可变默认：settings 层更新会替换它（同 permission-presets 的 defaultSettings）。
-  // setSource 收到的是「读取函数」（() => scope.get()），所以这里保存 thunk、读取时再调用。
-  let defaultSettings: () => { default: ApprovalMode } = () => ({ default: cfg.default })
+  // Live settings thunk：每次调用返回最新的 settings 解析值，让用户编辑在下一次
+  // `tools/pre-execute` 就生效（无需重启）。初始值退回 entryConfig，直到 settings
+  // 服务挂载并通过 `setSource` 把它换成 scope.get()。
+  let cfgThunk: () => Config = () => entryConfig
 
-  const effectiveMode = (session: Session): ApprovalMode => getApprovalMode(session, defaultSettings().default)
+  const effectiveMode = (session: Session): ApprovalMode => getApprovalMode(session, cfgThunk().default ?? 'off')
 
   const familyOf = (toolName: string): ToolFamily => {
-    if (cfg.editTools.includes(toolName)) return 'edit'
-    if (cfg.shellTools.includes(toolName)) return 'shell'
-    if (cfg.readOnlyTools.includes(toolName)) return 'readonly'
+    const cfg = cfgThunk()
+    if (cfg.editTools?.includes(toolName)) return 'edit'
+    if (cfg.shellTools?.includes(toolName)) return 'shell'
+    if (cfg.readOnlyTools?.includes(toolName)) return 'readonly'
     return 'other'
   }
 
   const needsAsk = (mode: ApprovalMode, family: ToolFamily): boolean => {
-    if (mode === 'request') return family === 'edit' || family === 'shell' || (family === 'other' && cfg.unclassified === 'ask')
-    if (mode === 'auto-edit') return family === 'shell' || (family === 'other' && cfg.unclassified === 'ask')
+    const unclassified = cfgThunk().unclassified ?? 'ask'
+    if (mode === 'request') return family === 'edit' || family === 'shell' || (family === 'other' && unclassified === 'ask')
+    if (mode === 'auto-edit') return family === 'shell' || (family === 'other' && unclassified === 'ask')
     return false // off / yolo：全放行
   }
 
@@ -155,14 +173,16 @@ export function apply(ctx: Context, config: Config): void {
     if (decision.kind !== 'allow') return decision
     const agent = exec.agent
     if (agent === undefined) return decision
-    if (cfg.autoAllowTools.includes(exec.name)) return decision
+    // 在裁决点重新读取最新 settings，而不是 apply() 启动时的快照。
+    const cfg = cfgThunk()
+    if (cfg.autoAllowTools?.includes(exec.name)) return decision
     const mode = effectiveMode(agent.session)
     const family = familyOf(exec.name)
     if (family === 'readonly') return decision
     if (!needsAsk(mode, family)) return decision
     return {
       kind: 'ask',
-      reason: cfg.askReason
+      reason: (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
         .replace('{tool}', exec.name)
         .replace('{mode}', mode)
         .replace('{family}', family),
@@ -173,9 +193,10 @@ export function apply(ctx: Context, config: Config): void {
   const applyMode = (session: Session, mode: ApprovalMode): { previous: ApprovalMode; sandboxChanged: boolean } => {
     const previous = effectiveMode(session)
     setApprovalMode(session, mode)
+    const sandboxDefaults = cfgThunk().sandboxDefaults ?? { request: 'workspace-write', 'auto-edit': 'workspace-write', yolo: 'workspace-write' }
     const sandbox = mode === 'off'
       ? compositionDefaultSandbox
-      : (cfg.sandboxDefaults[mode as 'request' | 'auto-edit' | 'yolo'] ?? 'workspace-write')
+      : (sandboxDefaults[mode as 'request' | 'auto-edit' | 'yolo'] ?? 'workspace-write')
     const sandboxChanged = effectiveSandboxMode(session.events) !== sandbox
     if (sandboxChanged) setSandboxMode(session, sandbox as SandboxMode)
     return { previous, sandboxChanged }
@@ -201,12 +222,10 @@ export function apply(ctx: Context, config: Config): void {
     })
   })
 
-  // ── settings：新会话默认模式（`approvalMode` 命名空间） ─────────────────
-  const settingsSchema: Schema<{ default: ApprovalMode }> = Schema.object({
-    default: Schema.union([...APPROVAL_MODES] as const).required(),
-  })
-  installSettingsSection(ctx, settingsNamespace('approval-mode'), settingsSchema, { default: cfg.default }, {
-    setSource: (current) => { defaultSettings = current },
+  // ── settings：全 Config schema 作为用户可编辑的 namespace ───────────────
+  // settings 的 `base` 层用 entryConfig（部署方 cordis 配置），用户编辑作为 user 层叠在上面。
+  installSettingsSection(ctx, settingsNamespace('approval-mode'), Config, entryConfig, {
+    setSource: (current) => { cfgThunk = current },
     onChange: () => {},
   })
 }

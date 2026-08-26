@@ -20,11 +20,11 @@
 
 - **四种审批模式**：`request`、`auto-edit`、`yolo`、`off`
 - **Web UI模式选择器**：输入框下方的快捷芯片，无需命令即可切换审批模式
+- **设置页面**：在 `设置 → 审批模式` 里配置全部审批选项（默认模式、工具族名单、未分类策略、各模式 sandbox 策略、审批弹窗文案模板）
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
-- **内存状态**：审批模式存储在内存中，重启后恢复默认
-- **设置集成**：为新会话配置默认审批模式
+- **内存状态**：会话级审批模式存储在内存中，重启后恢复默认
 - **斜杠命令**：通过 `/approval-mode` 命令切换模式
 
 ## 审批模式
@@ -211,6 +211,61 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 芯片通过 DSH 的 locale 服务独立本地化（见 `src/client/locales.ts`），所以
 芯片的标签已经会跟着 UI 切换走 —— `askReason` 是唯一需要手动跟语言对齐的
 部分。
+
+## 设置页面
+
+打开 Web UI 侧边栏 → **设置** → **审批模式**（最底部，Plugins 之后）即可
+编辑本插件暴露的全部 Config 字段。页面分为四个子区块：
+
+1. **默认行为** —— 默认模式、未分类策略下拉框
+2. **工具族分类** —— 每个族（`editTools`、`shellTools`、`readOnlyTools`、
+   `autoAllowTools`）一个可编辑的行列表
+3. **Sandbox 策略** —— 每个模式（`request`、`auto-edit`、`yolo`）一个下拉框
+4. **审批弹窗** —— `askReason` 多行文本模板
+
+每个字段都带：
+
+- `?` 提示符 —— 鼠标悬停查看字段作用（来自 schemastery 字段描述）
+- **重置**按钮 —— 清除该字段的用户覆盖、恢复到部署方在 `cordis.yml` 中
+  设置的值（即 settings 的 `base` 层）
+- 本地化标签与描述（默认 `en` + `zh`；增加语种请扩展 `src/client/locales.ts`）
+
+### 层次模型
+
+settings 命名空间 `approval-mode` 的解析值经过三层：
+
+```
+schema 默认  →  cordis `base`（部署方的 cordis.yml）  →  用户覆盖
+```
+
+用户未编辑的字段值取自部署方的 cordis 配置；用户编辑过的字段值取用户层。
+Reset 清除用户覆盖（让部署方的 base 重新浮现）。
+
+### 用户可编辑字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `default` | 模式下拉框 | 新会话的默认模式 |
+| `unclassified` | `'ask'` / `'allow'` 下拉框 | 工具不在任何族时的行为 |
+| `editTools` | 字符串列表 | auto-edit 模式下自动放行 |
+| `shellTools` | 字符串列表 | request / auto-edit 模式下都要审批 |
+| `readOnlyTools` | 字符串列表 | 任何模式都放行 |
+| `autoAllowTools` | 字符串列表 | 与族无关、直接绕过审批 |
+| `sandboxDefaults` | 每模式下拉框 | 切到该模式时联动写入的 sandbox 策略 |
+| `askReason` | 多行文本 | 审批弹窗文案模板（占位符：`{tool}` / `{mode}` / `{family}`） |
+
+### 生效时机
+
+全部 8 个字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，无需重启 DSH。
+运行时闸门每次工具调用都会重读 settings 范围。
+
+### 族名单之间的重叠
+
+`editTools`、`shellTools`、`readOnlyTools` 应**互不相交**——一个工具名应
+最多出现在一个族里。UI 里会显示提示文案提醒；如果用户不小心把同一个工具
+放进两个族，运行时仍按确定性的优先级裁决（`edit > shell > readonly`）。
+`autoAllowTools` 是这个规则的例外：它先于族分类被检查，与任何族名单重叠
+无副作用（冗余但不冲突）。
 
 ## 配置
 
