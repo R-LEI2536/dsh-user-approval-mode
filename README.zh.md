@@ -231,7 +231,8 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 
 每个字段都带：
 
-- 内联描述 —— 直接显示在 label 下方的小字（来自 schemastery 字段描述）
+- 内联描述 —— 显示在字段下方的独立行小字（来自 schemastery 字段描述）；
+  撑满整行宽度，不会被挤在 label 下面
 - **重置**按钮 —— 清除该字段的用户覆盖、恢复到部署方在 `cordis.yml` 中
   设置的值（即 settings 的 `base` 层）
 - 本地化标签与描述（默认 `en` + `zh`；增加语种请扩展 `src/client/locales.ts`）

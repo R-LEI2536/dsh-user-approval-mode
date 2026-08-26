@@ -254,8 +254,9 @@ are not exposed in the settings page. The runtime falls back to the cordis
 
 Each field has:
 
-- An inline description rendered directly under the label (sourced from
-  the schemastery field description)
+- An inline description rendered on its own row below the field (sourced
+  from the schemastery field description); sits at full row width so it
+  doesn't get squeezed under the label
 - A **Reset** button on the right that clears the user override for that
   field; the value falls back to whatever the deployer set in `cordis.yml`
   (the composition `base` layer)

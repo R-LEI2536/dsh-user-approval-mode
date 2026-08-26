@@ -23,9 +23,15 @@
 }
 
 .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldRow {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) 2fr auto;
-  align-items: start;
+  align-items: center;
   gap: 12px;
 }
 
@@ -33,7 +39,6 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding-top: 6px;
 }
 
 .fieldLabelText {
@@ -46,6 +51,9 @@
   font-size: 12px;
   line-height: 1.45;
   color: var(--dsw-text-secondary,);
+  /* Sits in its own row below fieldRow, so it spans the full width and
+     wraps naturally without constraining the input's vertical alignment. */
+  padding-left: 0;
 }
 
 .fieldControl {

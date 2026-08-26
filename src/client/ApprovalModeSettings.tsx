@@ -75,21 +75,24 @@ interface FieldShellProps {
   children: ReactElement
 }
 
-/** Label + inline description + control + always-visible Reset button. The
- *  description is rendered directly under the label (not behind a tooltip) so
- *  its semantics are visible without a hover gesture. */
+/** Label + control + always-visible Reset button on one row, then the field
+ *  description on its own row below. Putting the description on a separate
+ *  full-width row gives it enough horizontal space to avoid excessive
+ *  wrapping, and keeps the input from looking empty below the label. */
 function FieldShell({ label, descKey, t, onReset, resetLabel, children }: FieldShellProps) {
   const description = t(descKey)
   return (
     <div className={css.field}>
-      <div className={css.fieldLabel}>
-        <span className={css.fieldLabelText}>{label}</span>
-        <span className={css.fieldDescription}>{description}</span>
+      <div className={css.fieldRow}>
+        <div className={css.fieldLabel}>
+          <span className={css.fieldLabelText}>{label}</span>
+        </div>
+        <div className={css.fieldControl}>{children}</div>
+        <Button variant="ghost" size="sm" className={css.resetButton} onClick={onReset}>
+          {resetLabel}
+        </Button>
       </div>
-      <div className={css.fieldControl}>{children}</div>
-      <Button variant="ghost" size="sm" className={css.resetButton} onClick={onReset}>
-        {resetLabel}
-      </Button>
+      <div className={css.fieldDescription}>{description}</div>
     </div>
   )
 }
@@ -140,9 +143,16 @@ interface CsvInputProps {
 /** Editable string[] as a single comma-separated text input. Treats the value
  *  as a set: on commit, splits on comma, trims each token, drops empties,
  *  and deduplicates (first occurrence wins). Order among the survivors is
- *  preserved from the input. */
+ *  preserved from the input.
+ *
+ *  Commit happens on blur, NOT on every keystroke. Live committing would
+ *  round-trip through the settings scope on each character; the dedup/trim
+ *  pass can change the string shape, which would reset the controlled input
+ *  value and snap the caret to the end mid-typing. Holding the parsed
+ *  result until blur keeps the cursor stable while the user edits. */
 function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
-  // Local copy mirrors the value; commits back via onChange on each edit.
+  // Local copy mirrors the value; resyncs only when the prop changes (e.g.,
+  // an external reset or scope update overrides the in-progress edit).
   const [text, setText] = useState(value.join(', '))
   useEffect(() => { setText(value.join(', ')) }, [value])
 
@@ -157,10 +167,8 @@ function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
     <Input
       value={text}
       placeholder={placeholder}
-      onChange={(e) => {
-        setText(e.target.value)
-        commit(e.target.value)
-      }}
+      onChange={(e) => { setText(e.target.value) }}
+      onBlur={(e) => { commit(e.target.value) }}
     />
   )
 }
@@ -185,6 +193,16 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
   // SandboxDefaults is a single field; each mode row edits a sub-key.
   const setSandboxMode = (mode: 'request' | 'auto-edit' | 'yolo', sandboxMode: string): void => {
     void scope.set('sandboxDefaults', { ...value.sandboxDefaults, [mode]: sandboxMode })
+  }
+
+  // askReason is a free-form textarea. Live committing on every keystroke
+  // round-trips through the settings scope and snaps the caret to the end
+  // mid-typing; hold the typed text in local state and commit on blur so
+  // the caret stays where the user put it.
+  const [askReasonText, setAskReasonText] = useState(value.askReason)
+  useEffect(() => { setAskReasonText(value.askReason) }, [value.askReason])
+  const commitAskReason = (next: string): void => {
+    if (next !== value.askReason) { void scope.set('askReason', next) }
   }
 
   return (
@@ -324,9 +342,10 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           resetLabel={t('reset.label')}
         >
           <textarea
-            value={value.askReason}
+            value={askReasonText}
             placeholder={t('askReason.placeholder')}
-            onChange={(e) => { void scope.set('askReason', e.target.value) }}
+            onChange={(e) => { setAskReasonText(e.target.value) }}
+            onBlur={(e) => { commitAskReason(e.target.value) }}
           />
         </FieldShell>
       </div>
