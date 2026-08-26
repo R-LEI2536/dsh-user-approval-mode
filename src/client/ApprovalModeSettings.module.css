@@ -1,8 +1,9 @@
 /* Approval-mode settings page, in the DSH settings-panel design language:
-   title + intro at the top, sub-sections below, each field a vertical
-   block (label row + control + hint) separated from its neighbours by a
-   1px `--dsw-alias-border-l2` hairline. Every colour goes through a
-   semantic alias token so the page renders correctly in light and dark. */
+   title + intro at the top, then a sequence of sub-sections. Each
+   sub-section's fields are wrapped in a card (border + border-radius +
+   padding) so the grouping is visually obvious; consecutive fields inside
+   a card are separated by 1px hairlines. Every colour goes through a
+   semantic alias token. */
 
 .section {
   display: flex;
@@ -30,30 +31,43 @@
 .subSection {
   display: flex;
   flex-direction: column;
-  margin-top: 8px;
+  margin-top: 16px;
 }
 
 .subSection:first-of-type {
-  margin-top: 0;
+  margin-top: 4px;
 }
 
 .subSectionHeader {
-  margin: 0;
-  padding: 10px 0 6px;
-  font-size: 12px;
-  line-height: 18px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
 }
 
-/* One settings row: head (label + reset), control, hint. The container
-   draws a 1px hairline on top so consecutive fields read as a list. */
+/* Card wrapping the fields of a sub-section: border, radius, side padding.
+   The horizontal padding gives the controls breathing room from the
+   card's edge; the vertical padding is on each field instead so the
+   first field doesn't have a doubled top pad. */
+.subSectionBody {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 0 16px;
+  background: var(--dsw-alias-bg-base);
+}
+
+/* One settings row: head (label + reset), control, hint. */
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 12px 0;
   border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.subSectionBody .field:first-child {
+  border-top: none;
 }
 
 .head {
@@ -71,9 +85,6 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Text Reset sits on the right of the head row — same line as the label,
-   no border. The 12/18 typography matches the rest of the settings
-   design language (see ui-settings-models/fields.module.css). */
 .reset {
   flex: none;
   border: none;
@@ -96,14 +107,14 @@
 }
 
 .control {
-  /* Wraps the Input primitive / dropdown trigger / textarea. The Input
-     primitive styles itself with the alias tokens; the dropdown trigger
-     and textarea pick up styles defined below. */
   display: flex;
 }
 
-.control :global(input) {
-  max-width: 480px;
+/* Width applied via className passed to the Input primitive (its root
+   element picks up this class). Tool family inputs stretch to fill the
+   card's content area instead of leaving empty space on the right. */
+.csvInput {
+  width: 100%;
 }
 
 .hint {
@@ -113,8 +124,9 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* Dropdown trigger — match the Input primitive's visual language (32px
-   height, 8px radius, 1px hairline, bg-layer-3 fill). */
+/* Dropdown trigger — pill that mirrors the Input primitive's shape. The
+   trailing chevron indicates it can be pulled down; the glyph rotates
+   180° while the menu is open so the affordance tracks state. */
 .dropdownTrigger {
   box-sizing: border-box;
   display: inline-flex;
@@ -140,11 +152,20 @@
   border-color: var(--dsw-alias-border-l3);
 }
 
+.dropdownChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 0.15s ease;
+}
+
+.open .dropdownChevron {
+  transform: rotate(180deg);
+}
+
 /* Multi-line approval-prompt template. */
 .textarea {
   box-sizing: border-box;
   width: 100%;
-  max-width: 480px;
   min-height: 88px;
   padding: 8px 12px;
   border: 1px solid var(--dsw-alias-border-l2);

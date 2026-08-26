@@ -16,7 +16,7 @@
  */
 import { useState, useEffect, useSyncExternalStore, useRef, type ReactElement } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import { Menu, Input } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, Input, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { Config } from '../index'
 import type { ApprovalPageKey } from './locales'
@@ -113,10 +113,11 @@ function EnumDropdown<T extends string>({ value, items, resolveLabel, onChange }
         <button
           ref={anchorRef}
           type="button"
-          className={css.dropdownTrigger}
+          className={`${css.dropdownTrigger} ${open ? css.open : ''}`}
           onClick={() => { setOpen(!open) }}
         >
           <span>{resolveLabel(value)}</span>
+          <IconChevronDownOutline14 size={14} className={css.dropdownChevron} />
         </button>
       )}
       items={items.map(item => ({ id: item.id, label: resolveLabel(item.id) }))}
@@ -164,6 +165,7 @@ function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
     <Input
       value={text}
       placeholder={placeholder}
+      className={css.csvInput}
       onChange={(e) => { setText(e.target.value) }}
       onBlur={(e) => { commit(e.target.value) }}
     />
@@ -210,145 +212,148 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
       {/* ── Tool family classification ────────────────────────────────── */}
       <div className={css.subSection}>
         <h3 className={css.subSectionHeader}>{t('section.tools')}</h3>
+        <div className={css.subSectionBody}>
+          <FieldShell
+            label={t('field.editTools')}
+            descKey="desc.editTools"
+            t={t}
+            onReset={() => { reset('editTools') }}
+            resetLabel={t('reset.label')}
+          >
+            <CsvInput
+              value={value.editTools}
+              onChange={(v) => { void scope.set('editTools', v) }}
+              placeholder={t('csv.placeholder')}
+            />
+          </FieldShell>
 
-        <FieldShell
-          label={t('field.editTools')}
-          descKey="desc.editTools"
-          t={t}
-          onReset={() => { reset('editTools') }}
-          resetLabel={t('reset.label')}
-        >
-          <CsvInput
-            value={value.editTools}
-            onChange={(v) => { void scope.set('editTools', v) }}
-            placeholder={t('csv.placeholder')}
-          />
-        </FieldShell>
+          <FieldShell
+            label={t('field.shellTools')}
+            descKey="desc.shellTools"
+            t={t}
+            onReset={() => { reset('shellTools') }}
+            resetLabel={t('reset.label')}
+          >
+            <CsvInput
+              value={value.shellTools}
+              onChange={(v) => { void scope.set('shellTools', v) }}
+              placeholder={t('csv.placeholder')}
+            />
+          </FieldShell>
 
-        <FieldShell
-          label={t('field.shellTools')}
-          descKey="desc.shellTools"
-          t={t}
-          onReset={() => { reset('shellTools') }}
-          resetLabel={t('reset.label')}
-        >
-          <CsvInput
-            value={value.shellTools}
-            onChange={(v) => { void scope.set('shellTools', v) }}
-            placeholder={t('csv.placeholder')}
-          />
-        </FieldShell>
+          <FieldShell
+            label={t('field.readOnlyTools')}
+            descKey="desc.readOnlyTools"
+            t={t}
+            onReset={() => { reset('readOnlyTools') }}
+            resetLabel={t('reset.label')}
+          >
+            <CsvInput
+              value={value.readOnlyTools}
+              onChange={(v) => { void scope.set('readOnlyTools', v) }}
+              placeholder={t('csv.placeholder')}
+            />
+          </FieldShell>
 
-        <FieldShell
-          label={t('field.readOnlyTools')}
-          descKey="desc.readOnlyTools"
-          t={t}
-          onReset={() => { reset('readOnlyTools') }}
-          resetLabel={t('reset.label')}
-        >
-          <CsvInput
-            value={value.readOnlyTools}
-            onChange={(v) => { void scope.set('readOnlyTools', v) }}
-            placeholder={t('csv.placeholder')}
-          />
-        </FieldShell>
-
-        <FieldShell
-          label={t('field.autoAllowTools')}
-          descKey="desc.autoAllowTools"
-          t={t}
-          onReset={() => { reset('autoAllowTools') }}
-          resetLabel={t('reset.label')}
-        >
-          <CsvInput
-            value={value.autoAllowTools}
-            onChange={(v) => { void scope.set('autoAllowTools', v) }}
-            placeholder={t('csv.placeholder')}
-          />
-        </FieldShell>
+          <FieldShell
+            label={t('field.autoAllowTools')}
+            descKey="desc.autoAllowTools"
+            t={t}
+            onReset={() => { reset('autoAllowTools') }}
+            resetLabel={t('reset.label')}
+          >
+            <CsvInput
+              value={value.autoAllowTools}
+              onChange={(v) => { void scope.set('autoAllowTools', v) }}
+              placeholder={t('csv.placeholder')}
+            />
+          </FieldShell>
+        </div>
       </div>
 
       {/* ── Sandbox policy ─────────────────────────────────────────────── */}
       <div className={css.subSection}>
         <h3 className={css.subSectionHeader}>{t('section.sandbox')}</h3>
+        <div className={css.subSectionBody}>
+          <FieldShell
+            label={t('field.sandboxRequest')}
+            descKey="desc.sandbox"
+            t={t}
+            onReset={() => { reset('sandboxDefaults') }}
+            resetLabel={t('reset.label')}
+          >
+            <EnumDropdown<'read-only' | 'workspace-write' | 'danger-full-access'>
+              value={value.sandboxDefaults.request ?? 'workspace-write'}
+              items={[
+                { id: 'read-only', label: t('sandbox.read-only') },
+                { id: 'workspace-write', label: t('sandbox.workspace-write') },
+                { id: 'danger-full-access', label: t('sandbox.danger-full-access') },
+              ]}
+              resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
+              onChange={(next) => { setSandboxMode('request', next) }}
+            />
+          </FieldShell>
 
-        <FieldShell
-          label={t('field.sandboxRequest')}
-          descKey="desc.sandbox"
-          t={t}
-          onReset={() => { reset('sandboxDefaults') }}
-          resetLabel={t('reset.label')}
-        >
-          <EnumDropdown<'read-only' | 'workspace-write' | 'danger-full-access'>
-            value={value.sandboxDefaults.request ?? 'workspace-write'}
-            items={[
-              { id: 'read-only', label: t('sandbox.read-only') },
-              { id: 'workspace-write', label: t('sandbox.workspace-write') },
-              { id: 'danger-full-access', label: t('sandbox.danger-full-access') },
-            ]}
-            resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
-            onChange={(next) => { setSandboxMode('request', next) }}
-          />
-        </FieldShell>
+          <FieldShell
+            label={t('field.sandboxAutoEdit')}
+            descKey="desc.sandbox"
+            t={t}
+            onReset={() => { reset('sandboxDefaults') }}
+            resetLabel={t('reset.label')}
+          >
+            <EnumDropdown<'read-only' | 'workspace-write' | 'danger-full-access'>
+              value={value.sandboxDefaults['auto-edit'] ?? 'workspace-write'}
+              items={[
+                { id: 'read-only', label: t('sandbox.read-only') },
+                { id: 'workspace-write', label: t('sandbox.workspace-write') },
+                { id: 'danger-full-access', label: t('sandbox.danger-full-access') },
+              ]}
+              resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
+              onChange={(next) => { setSandboxMode('auto-edit', next) }}
+            />
+          </FieldShell>
 
-        <FieldShell
-          label={t('field.sandboxAutoEdit')}
-          descKey="desc.sandbox"
-          t={t}
-          onReset={() => { reset('sandboxDefaults') }}
-          resetLabel={t('reset.label')}
-        >
-          <EnumDropdown<'read-only' | 'workspace-write' | 'danger-full-access'>
-            value={value.sandboxDefaults['auto-edit'] ?? 'workspace-write'}
-            items={[
-              { id: 'read-only', label: t('sandbox.read-only') },
-              { id: 'workspace-write', label: t('sandbox.workspace-write') },
-              { id: 'danger-full-access', label: t('sandbox.danger-full-access') },
-            ]}
-            resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
-            onChange={(next) => { setSandboxMode('auto-edit', next) }}
-          />
-        </FieldShell>
-
-        <FieldShell
-          label={t('field.sandboxYolo')}
-          descKey="desc.sandbox"
-          t={t}
-          onReset={() => { reset('sandboxDefaults') }}
-          resetLabel={t('reset.label')}
-        >
-          <EnumDropdown<'read-only' | 'workspace-write' | 'danger-full-access'>
-            value={value.sandboxDefaults.yolo ?? 'workspace-write'}
-            items={[
-              { id: 'read-only', label: t('sandbox.read-only') },
-              { id: 'workspace-write', label: t('sandbox.workspace-write') },
-              { id: 'danger-full-access', label: t('sandbox.danger-full-access') },
-            ]}
-            resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
-            onChange={(next) => { setSandboxMode('yolo', next) }}
-          />
-        </FieldShell>
+          <FieldShell
+            label={t('field.sandboxYolo')}
+            descKey="desc.sandbox"
+            t={t}
+            onReset={() => { reset('sandboxDefaults') }}
+            resetLabel={t('reset.label')}
+          >
+            <EnumDropdown<'read-only' | 'workspace-write' | 'danger-full-access'>
+              value={value.sandboxDefaults.yolo ?? 'workspace-write'}
+              items={[
+                { id: 'read-only', label: t('sandbox.read-only') },
+                { id: 'workspace-write', label: t('sandbox.workspace-write') },
+                { id: 'danger-full-access', label: t('sandbox.danger-full-access') },
+              ]}
+              resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
+              onChange={(next) => { setSandboxMode('yolo', next) }}
+            />
+          </FieldShell>
+        </div>
       </div>
 
       {/* ── Approval prompt ────────────────────────────────────────────── */}
       <div className={css.subSection}>
         <h3 className={css.subSectionHeader}>{t('section.dialog')}</h3>
-
-        <FieldShell
-          label={t('field.askReason')}
-          descKey="desc.askReason"
-          t={t}
-          onReset={() => { reset('askReason') }}
-          resetLabel={t('reset.label')}
-        >
-          <textarea
-            value={askReasonText}
-            placeholder={t('askReason.placeholder')}
-            className={css.textarea}
-            onChange={(e) => { setAskReasonText(e.target.value) }}
-            onBlur={(e) => { commitAskReason(e.target.value) }}
-          />
-        </FieldShell>
+        <div className={css.subSectionBody}>
+          <FieldShell
+            label={t('field.askReason')}
+            descKey="desc.askReason"
+            t={t}
+            onReset={() => { reset('askReason') }}
+            resetLabel={t('reset.label')}
+          >
+            <textarea
+              value={askReasonText}
+              placeholder={t('askReason.placeholder')}
+              className={css.textarea}
+              onChange={(e) => { setAskReasonText(e.target.value) }}
+              onBlur={(e) => { commitAskReason(e.target.value) }}
+            />
+          </FieldShell>
+        </div>
       </div>
     </div>
   )
