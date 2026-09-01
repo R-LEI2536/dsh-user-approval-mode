@@ -5,13 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-09-01
+## [0.3.1] - 2026-09-01
 
 ### Changed
 
 - **Peer dependencies widened to `>=`** — all 16 `@deepseek-ai/dsh-*` peer+dev deps, `@deepseek-ai/cordis`, and `@deepseek-ai/schemastery` are now pinned `>=X.Y.Z` (no upper bound) instead of `^X.Y.Z`. The plugin auto-tracks every new upstream release from `>=0.1.2-alpha.3` onward, including future majors. Trade-off: breaking changes from a DSH major bump (e.g. `0.2.0` API redesign) land automatically; we accept this and rely on test/build catching the regression before release.
 - **`pnpm-workspace.yaml` overrides trimmed** — the 17 `0.1.2-alpha.3` overrides (which pinned the entire DSH transitive tree to a single version) are removed because they defeat the auto-update strategy above. `dsh-system-prompt` stays pinned to `0.1.1-rc.2` (intentional under-pin — the alpha line moved on and 0.1.1-rc.2 is the last known-stable point for it).
 - **Dropped unused peer dep** — `@deepseek-ai/dsh-session-projection` had a `import type {}` placeholder but no actual `ctx.sessionProjections` call site anywhere; removed from `package.json`, `pnpm-workspace.yaml`, and `src/index.ts`.
+
+## [0.3.0] - 2026-09-01
 
 ### Fixed
 
