@@ -34,7 +34,6 @@ import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-commands'
-import type {} from '@deepseek-ai/dsh-session-projection'
 
 // 扩展 Context 类型声明（仅声明 shell，因为 sandboxPolicy 和 sessions 已在其他包中声明）
 declare module '@deepseek-ai/cordis' {

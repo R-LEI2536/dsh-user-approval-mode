@@ -1,4 +1,4 @@
-# dsh-user-approval
+# dsh-user-approval-mode
 
 Approval-mode policy plugin for DeepSeek Harness. Decides, per tool call, whether the user must approve before execution. Sits at `tools/pre-execute` and returns `{ kind: 'ask' }` when the active mode and the tool's family together demand approval.
 

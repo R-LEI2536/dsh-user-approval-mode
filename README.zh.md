@@ -1,4 +1,4 @@
-# dsh-user-approval
+# dsh-user-approval-mode
 
 **版本 0.2.0**
 
@@ -67,7 +67,7 @@
 ### 从 GitHub 安装
 
 ```bash
-dsh plugin --profile web add github:R-LEI2536/dsh-user-approval
+dsh plugin --profile web add github:R-LEI2536/dsh-user-approval-mode
 ```
 
 ### 从本地目录安装（开发模式）
@@ -207,8 +207,8 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 
 ```yaml
 - insert:
-    - id: dsh-user-approval
-      name: dsh-user-approval
+    - id: dsh-user-approval-mode
+      name: dsh-user-approval-mode
       config:
         askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_directory 而非 shell'
 ```
@@ -298,7 +298,7 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 ```yaml
 - insert:
     - id: approval-modes
-      name: dsh-user-approval
+      name: dsh-user-approval-mode
 ```
 
 使用默认值：
@@ -316,7 +316,7 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 ```yaml
 - insert:
     - id: approval-modes
-      name: dsh-user-approval
+      name: dsh-user-approval-mode
       config:
         # 新会话的默认模式
         default: auto-edit

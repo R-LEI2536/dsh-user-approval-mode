@@ -1,4 +1,4 @@
-# dsh-user-approval
+# dsh-user-approval-mode
 
 **Version 0.2.0**
 
@@ -68,7 +68,7 @@ The approval modes are inspired by [Qwen Code](https://github.com/QwenLM/Qwen-Co
 ### From GitHub
 
 ```bash
-dsh plugin --profile web add github:R-LEI2536/dsh-user-approval
+dsh plugin --profile web add github:R-LEI2536/dsh-user-approval-mode
 ```
 
 ### From Local Directory (Development)
@@ -223,8 +223,8 @@ example, switch it to Chinese, swap wording, or add your own guidance:
 
 ```yaml
 - insert:
-    - id: dsh-user-approval
-      name: dsh-user-approval
+    - id: dsh-user-approval-mode
+      name: dsh-user-approval-mode
       config:
         askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_directory 而非 shell'
 ```
@@ -333,7 +333,7 @@ it is checked first, so overlap with any family list is harmless
 ```yaml
 - insert:
     - id: approval-modes
-      name: dsh-user-approval
+      name: dsh-user-approval-mode
 ```
 
 This uses default values:
@@ -351,7 +351,7 @@ You can customize the plugin behavior in your agent preset:
 ```yaml
 - insert:
     - id: approval-modes
-      name: dsh-user-approval
+      name: dsh-user-approval-mode
       config:
         # Default mode for new sessions
         default: auto-edit

@@ -1,7 +1,7 @@
-# dsh-user-approval bundle: approval modes
+# dsh-user-approval-mode bundle: approval modes
 - insert:
-    - id: dsh-user-approval
-      name: dsh-user-approval
+    - id: dsh-user-approval-mode
+      name: dsh-user-approval-mode
       config:
         default: off
         editTools: ['write', 'edit', 'str_replace_editor']
