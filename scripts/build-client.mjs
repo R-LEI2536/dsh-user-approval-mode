@@ -35,7 +35,7 @@ async function build() {
       define: {
         'process.env.NODE_ENV': '"production"',
       },
-      banner: `window.__ModuleLoader__.load({ id: "dsh-user-approval", factory: (require) => {`,
+      banner: `window.__ModuleLoader__.load({ id: "dsh-user-approval-mode", factory: (require) => {`,
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
     })

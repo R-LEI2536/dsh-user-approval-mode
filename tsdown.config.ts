@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { transform } from 'lightningcss'
 import { basename, resolve, dirname } from 'node:path'
 
-const PLUGIN_ID = 'dsh-user-approval'
+const PLUGIN_ID = 'dsh-user-approval-mode'
 
 // External dependencies (platform modules)
 const EXTERNAL = [
