@@ -137,6 +137,17 @@ dsh plugin --profile web add /path/to/dsh-user-approval
 - 重启后使用 `/approval-mode` 命令快速切换模式
 - 或使用 Web UI 选择器切换模式
 
+### DSH 版本兼容
+
+**v0.3.0+ 要求 DSH ≥ 0.1.2-alpha.3**：
+
+插件 v0.3.0 已迁移到 DSH 0.1.2-alpha.3 的 API，不再兼容更早的 DSH：
+
+- `@deepseek-ai/dsh-sandbox-policy` 移除了 `effectiveSandboxMode`、`@deepseek-ai/dsh-settings` 移除了 `installSettingsSection` / `settingsNamespace`、客户端包 `@deepseek-ai/dsh-client-runtime` 被重命名为 `dsh-client-modules`
+- 16 个 `@deepseek-ai/dsh-*` peer dep 从 `>=0.1.0-rc.8` 升到 `^0.1.2-alpha.3`
+
+如果你的 harness 还停在老 DSH 版本，请继续使用插件 v0.2.0，等 harness 升到 `0.1.2-alpha.3` 之后再升插件。
+
 ### UI 状态同步
 
 Web UI 状态独立管理，刷新时从服务器同步：
@@ -211,6 +222,9 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 芯片通过 DSH 的 locale 服务独立本地化（见 `src/client/locales.ts`），所以
 芯片的标签已经会跟着 UI 切换走 —— `askReason` 是唯一需要手动跟语言对齐的
 部分。
+
+**`askReason` 内的内联颜色或标记无效**：上游审批弹窗把 reason 当作纯字符串
+渲染，没有标记通道 —— 模板里给某段文字加颜色或样式不会生效。
 
 ## 设置页面
 

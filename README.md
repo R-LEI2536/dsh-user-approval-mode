@@ -126,6 +126,15 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 
 ### DSH Version Compatibility
 
+**v0.3.0+ requires DSH ≥ 0.1.2-alpha.3**:
+
+The plugin v0.3.0 was migrated to the DSH 0.1.2-alpha.3 API surface and no longer works on earlier DSH lines:
+
+- Removed/relocated exports in `@deepseek-ai/dsh-sandbox-policy` (`effectiveSandboxMode`), `@deepseek-ai/dsh-settings` (`installSettingsSection`, `settingsNamespace`), and the client packages (`@deepseek-ai/dsh-client-runtime` → `dsh-client-modules`)
+- Peer dependencies raised from `>=0.1.0-rc.8` to `^0.1.2-alpha.3` for sixteen `@deepseek-ai/dsh-*` packages
+
+If your harness still resolves to an older DSH release, stay on plugin `v0.2.0` and bump only when the harness itself moves to `0.1.2-alpha.3` or later.
+
 **DSH 0.1.0-rc.7 API Breaking Change**:
 
 DSH introduced a breaking change to the `ctx.remote.commands.execute()` API in version `0.1.0-rc.7`:
@@ -231,6 +240,10 @@ directly. The mode selector chip on the composer toolbar is independently
 localized via DSH's locale service (`src/client/locales.ts`), so the chip
 labels already follow the UI language automatically — `askReason` is the one
 piece that needs manual configuration.
+
+**Inline color or markup inside `askReason` is not supported**: the upstream
+approval dialog renders the reason as a plain string with no markup channel,
+so styling or coloring parts of the template has no effect.
 
 ## Settings Page
 
