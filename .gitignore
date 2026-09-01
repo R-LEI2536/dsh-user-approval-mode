@@ -4,6 +4,8 @@ lib/
 
 # Dependencies
 node_modules/
+# pnpm content-addressable store (paired with node_modules/.pnpm/)
+.pnpm-store/
 
 # Documentation
 tutorial/
