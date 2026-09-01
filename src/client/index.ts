@@ -8,9 +8,20 @@
  * while the settings page binds the user-editable section (six of the eight
  * Config fields — `default` and `unclassified` stay deployer-only). Settings
  * writes flow through the settings RPC back to the server plugin's
- * `installSettingsSection` registration.
+ * `ctx.settings.installSection` registration.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+// DSH 0.1.2-alpha.3 把 dsh-client-runtime 重命名为 dsh-client-modules，
+// ClientContext 收敛到 cordis 的 Context、SessionId 拆到 dsh-session/types。
+// 这里按新版路径取，避免依赖废弃包。
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+// Type-only: pulls the ui-renderer Context merge (ctx.slots). `slots` is now
+// declared on Context by dsh-client-ui-renderer, not the slots core.
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the ui-session merge (SessionStandardProps.sessionId:
+// SessionId). Without this, slots.register's inject parameter falls back to
+// `string`, and our branded SessionId handler fails to type-check.
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the composer dock seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -29,16 +40,18 @@ export type { ApprovalKey, ApprovalPageKey } from './locales'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** The approval mode chip's copy. */
-    approval: ApprovalKey
+    'dsh-user-approval-mode': ApprovalKey
     /** The approval mode settings page copy (sidebar label, sub-section headers, field labels, controls). */
-    'approval-page': ApprovalPageKey
+    'dsh-user-approval-mode-page': ApprovalPageKey
   }
 }
 
-/** Dictionary namespace owned by the chip. */
-const NS = 'approval'
+/** Dictionary namespace owned by the chip. `dsh-user-approval-mode*` prefix
+ *  avoids colliding with the official `@deepseek-ai/dsh-user-approval` package
+ *  (which also registers a locale named `approval`). */
+const NS = 'dsh-user-approval-mode'
 /** Dictionary namespace owned by the settings page. */
-const NS_PAGE = 'approval-page'
+const NS_PAGE = 'dsh-user-approval-mode-page'
 /** Settings slot id (matches the server-side namespace key for routing). */
 const SETTINGS_ID = 'approval-mode'
 /** Settings slot order: bottom of the sidebar, after the Plugins section. */
@@ -125,7 +138,7 @@ export function apply(ctx: ClientContext): void {
   // ── Settings page (full-page editor for the six user-editable fields) ──
   // The page lives at the bottom of the sidebar (`order: 1100`, after the
   // Plugins section). It binds the same `approval-mode` settings namespace
-  // that the server plugin's `installSettingsSection` exposed; user edits go
+  // that the server plugin's `ctx.settings.installSection` exposed; user edits go
   // through `scope.set`/`scope.unset` and are persisted to the settings document.
   // `default` and `unclassified` remain in the schema but are not editable here.
   ctx.slots.inject('settings.section', () => ctx.slots.register({

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **DSH 0.1.2-alpha.3 compatibility** — `@deepseek-ai/dsh-sandbox-policy` removed the `effectiveSandboxMode(events)` export (now folded into a session-projection unit on `ctx.sandboxPolicy`). Replaced the import and the one call site in `applyMode` with `ctx.sandboxPolicy.overrideOf(session)`, semantics preserved (last logged `sandbox/mode` for the session, or `undefined`). The cast on `ctx.get('sandboxPolicy')` now also types `overrideOf` so the new call site compiles. Off-mode semantics unchanged: when the session's current override already equals the composition default, no redundant `sandbox/mode` event is written.
+- **DSH 0.1.2-alpha.3 client migration** — `@deepseek-ai/dsh-client-runtime` was renamed to `dsh-client-modules` and is being deprecated. Moved `ClientContext` (now aliased `Context` from `@deepseek-ai/cordis`), `SessionId` (now from `@deepseek-ai/dsh-session/types`), and `SettingsScope` (now from `@deepseek-ai/dsh-client-ui-settings/client`) to the new locations. Dropped `dsh-client-runtime` from peer/dev deps; runtime/type behavior is unchanged because the old names were type-only.
+- **Locale namespace rename** — the chip + settings page dictionaries were registered under `approval` / `approval-page`, which collides with the official `@deepseek-ai/dsh-client-ui-approval` (harness-loaded) on locale registration (`locale namespace "approval" already has locale "zh"`). Renamed to `dsh-user-approval-mode` / `dsh-user-approval-mode-page` to keep the plugin namespaced. Settings namespace `approval-mode` is unchanged (no collision there).
+
 ## [0.2.0] - 2026-08-26
 
 ### Added

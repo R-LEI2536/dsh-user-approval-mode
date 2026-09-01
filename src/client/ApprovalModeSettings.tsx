@@ -17,7 +17,9 @@
 import { useState, useEffect, useSyncExternalStore, useRef, type ReactElement } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { Menu, Input, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+// DSH 0.1.2-alpha.3: dsh-client-runtime 废弃，SettingsScope 现在走
+// dsh-client-ui-settings 的客户端子路径。
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Config } from '../index'
 import type { ApprovalPageKey } from './locales'
 import css from './ApprovalModeSettings.module.css'

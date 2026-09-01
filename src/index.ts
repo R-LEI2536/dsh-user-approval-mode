@@ -24,9 +24,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { effectiveSandboxMode, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
+import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+// DSH 0.1.2-alpha.3 起 `settingsNamespace()` 与 `installSettingsSection()` 不再作为
+// `@deepseek-ai/dsh-settings` 的顶层导出。namespace 改为编译期校验的字符串字面量
+// （`'approval-mode'` 直接满足 `^[a-z][a-z0-9-]*$`），注册入口收敛到 `SettingsProvider`
+// 服务上的 `ctx.settings.installSection()`。`ctx.settings` 由 cordis 的 `declare module`
+// 推断，这里只保留 `import type {}` 占位以拉取相关类型增广。
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-projection'
@@ -139,7 +144,15 @@ export function apply(ctx: Context, config: Config): void {
 
   // 组合默认 sandbox：无 session 覆盖时沙箱旋钮应落回的值（off 联动写回它）。
   // 使用 ctx.get() 而不是 inject 声明，避免fiber启动依赖
-  const sandboxPolicy = ctx.get('sandboxPolicy') as { defaultMode?: string } | undefined
+  //
+  // DSH 0.1.2-alpha.3 起 `effectiveSandboxMode(events)` 从
+  // `@deepseek-ai/dsh-sandbox-policy` 导出中移除（迁到 session-projection 单元）；
+  // "session 最后一个 sandbox/mode" 现在走 `ctx.sandboxPolicy.overrideOf(session)`，
+  // 语义等价：取该 session 日志里最后一个 `sandbox/mode` 事件，没有则 undefined。
+  // 断言只扩这两个字段，与本函数既有的 ctx.get() 风格保持一致。
+  const sandboxPolicy = ctx.get('sandboxPolicy') as
+    | { defaultMode?: SandboxMode; overrideOf: (session: Session) => SandboxMode | undefined }
+    | undefined
   const shell = ctx.get('shell') as { sandboxMode?: string } | undefined
   const compositionDefaultSandbox = sandboxPolicy?.defaultMode ?? shell?.sandboxMode ?? 'workspace-write'
 
@@ -197,7 +210,7 @@ export function apply(ctx: Context, config: Config): void {
     const sandbox = mode === 'off'
       ? compositionDefaultSandbox
       : (sandboxDefaults[mode as 'request' | 'auto-edit' | 'yolo'] ?? 'workspace-write')
-    const sandboxChanged = effectiveSandboxMode(session.events) !== sandbox
+    const sandboxChanged = sandboxPolicy?.overrideOf(session) !== sandbox
     if (sandboxChanged) setSandboxMode(session, sandbox as SandboxMode)
     return { previous, sandboxChanged }
   }
@@ -224,8 +237,12 @@ export function apply(ctx: Context, config: Config): void {
 
   // ── settings：全 Config schema 作为用户可编辑的 namespace ───────────────
   // settings 的 `base` 层用 entryConfig（部署方 cordis 配置），用户编辑作为 user 层叠在上面。
-  installSettingsSection(ctx, settingsNamespace('approval-mode'), Config, entryConfig, {
-    setSource: (current) => { cfgThunk = current },
-    onChange: () => {},
+  // 客户端的 settings page 用同一个 namespace 字符串路由（见 src/client/index.ts 的 SETTINGS_ID）。
+  const APPROVAL_MODE_SETTINGS_NAMESPACE = 'approval-mode'
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.settings.installSection(ctx, APPROVAL_MODE_SETTINGS_NAMESPACE, Config, entryConfig, {
+      setSource: (current) => { cfgThunk = current },
+      onChange: () => {},
+    })
   })
 }
