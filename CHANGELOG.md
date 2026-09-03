@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.2] - 2026-09-03
+
+### Changed
+
+- **DSH floor raised to `>=0.1.2-rc.1`** — sixteen `@deepseek-ai/dsh-*` peer+dev deps now require `>=0.1.2-rc.1` (was `>=0.1.2-alpha.3`). The harness itself ships under `0.1.2-rc.1` now, so the bump keeps the auto-tracking promise from v0.3.1 honest. The `pnpm-workspace.yaml` `minimumReleaseAgeExclude` list is also moved to the `0.1.2-rc.1` line; `dsh-system-prompt` stays under-pinned at `0.1.1-rc.2` (unchanged — the alpha line moved past it and `rc.1` is still rc-line for `dsh-system-prompt`).
+- **No source change** — every API surface this plugin depends on (`ctx.sandboxPolicy.overrideOf(session)`, `setSandboxMode(session, mode)`, `ctx.settings.installSection(...)`, the `Context` / `SettingsScope` / `SessionId` / `SessionEvent` import paths, and the `dsh-client-modules` boundary) kept the same shape across the upstream `alpha.4`, `alpha.5`, and `rc.1` releases. The only breaking refactor in that range (`refactor(session)!: distinguish event seqs from log offsets`) only added brand separation between `SessionSeq` and `SessionLogOffset`; the plugin reads `session.events` as an array and never touches the numbered fields, so the new brands do not surface at any call site.
+
 ## [0.3.1] - 2026-09-01
 
 ### Changed

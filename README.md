@@ -131,9 +131,15 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 The plugin v0.3.0 was migrated to the DSH 0.1.2-alpha.3 API surface and no longer works on earlier DSH lines:
 
 - Removed/relocated exports in `@deepseek-ai/dsh-sandbox-policy` (`effectiveSandboxMode`), `@deepseek-ai/dsh-settings` (`installSettingsSection`, `settingsNamespace`), and the client packages (`@deepseek-ai/dsh-client-runtime` → `dsh-client-modules`)
-- Peer dependencies raised from `>=0.1.0-rc.8` to `^0.1.2-alpha.3` for sixteen `@deepseek-ai/dsh-*` packages
+- Peer dependencies raised from `>=0.1.0-rc.8` to `>=0.1.2-rc.1` for sixteen `@deepseek-ai/dsh-*` packages (the floor moved to `rc.1` in v0.3.2; see below)
 
 If your harness still resolves to an older DSH release, stay on plugin `v0.2.0` and bump only when the harness itself moves to `0.1.2-alpha.3` or later.
+
+**v0.3.2+ raises the floor to DSH ≥ 0.1.2-rc.1**:
+
+Starting with v0.3.2 the peer floors move from `>=0.1.2-alpha.3` to `>=0.1.2-rc.1` (the version the harness itself now ships under). No source change is needed: every call site the v0.3.0 migration introduced — `ctx.sandboxPolicy.overrideOf(session)`, `setSandboxMode(session, mode)`, `ctx.settings.installSection(...)`, the `Context` / `SettingsScope` / `SessionId` import paths, and the `dsh-client-modules` boundary — kept the same shape across the upstream `alpha.4`, `alpha.5`, and `rc.1` releases. The only DSP-side breaking refactor in that range (`refactor(session)!: distinguish event seqs from log offsets`) only added brand separation between `SessionSeq` and `SessionLogOffset`; the plugin reads `session.events` as an array and never touches the numbered fields, so the new brand types do not affect any call site.
+
+If your harness still resolves to `0.1.2-alpha.3` through `0.1.2-alpha.5`, stay on plugin `v0.3.1`.
 
 **DSH 0.1.0-rc.7 API Breaking Change**:
 

@@ -144,9 +144,15 @@ dsh plugin --profile web add /path/to/dsh-user-approval
 插件 v0.3.0 已迁移到 DSH 0.1.2-alpha.3 的 API，不再兼容更早的 DSH：
 
 - `@deepseek-ai/dsh-sandbox-policy` 移除了 `effectiveSandboxMode`、`@deepseek-ai/dsh-settings` 移除了 `installSettingsSection` / `settingsNamespace`、客户端包 `@deepseek-ai/dsh-client-runtime` 被重命名为 `dsh-client-modules`
-- 16 个 `@deepseek-ai/dsh-*` peer dep 从 `>=0.1.0-rc.8` 升到 `^0.1.2-alpha.3`
+- 16 个 `@deepseek-ai/dsh-*` peer dep 从 `>=0.1.0-rc.8` 升到 `>=0.1.2-rc.1`（下限在 v0.3.2 抬到 rc.1，见下）
 
 如果你的 harness 还停在老 DSH 版本，请继续使用插件 v0.2.0，等 harness 升到 `0.1.2-alpha.3` 之后再升插件。
+
+**v0.3.2+ 把下限抬到 DSH ≥ 0.1.2-rc.1**：
+
+从 v0.3.2 起，peer dep 下限从 `>=0.1.2-alpha.3` 挪到 `>=0.1.2-rc.1`（这也是 harness 自身当前发布的版本）。源代码不需要任何改动：v0.3.0 迁移里引入的每个调用点——`ctx.sandboxPolicy.overrideOf(session)`、`setSandboxMode(session, mode)`、`ctx.settings.installSection(...)`、`Context` / `SettingsScope` / `SessionId` 的导入路径、以及 `dsh-client-modules` 边界——在上游 `alpha.4`、`alpha.5`、`rc.1` 这几个版本里形状都没变。该区间唯一的破坏性重构 `refactor(session)!: distinguish event seqs from log offsets` 只是把 `SessionSeq` 和 `SessionLogOffset` 拆成了不同的品牌类型；插件只用 `session.events` 这个事件数组，从不直接读写序号字段，新的品牌类型不影响任何调用点。
+
+如果你的 harness 还停在 `0.1.2-alpha.3` 到 `0.1.2-alpha.5` 之间，请继续使用插件 v0.3.1。
 
 ### UI 状态同步
 
