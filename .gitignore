@@ -12,6 +12,7 @@ tutorial/
 
 # Development notes (not for users)
 local-docs/
+ref_codes/
 
 # IDE
 .vscode/
