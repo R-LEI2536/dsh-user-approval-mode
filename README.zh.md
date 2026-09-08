@@ -4,7 +4,7 @@
 
 [English](./README.md)
 
-用户审批模式插件，为 DeepSeek Harness 提供四种审批模式，控制工具执行前是否需要用户确认。
+用户审批模式插件，为 DeepSeek Harness 提供五种审批模式，控制工具执行前是否需要用户确认。
 
 ## 更新日志
 
@@ -18,9 +18,10 @@
 
 ## 功能特性
 
-- **四种审批模式**：`request`、`auto-edit`、`yolo`、`off`
+- **五种审批模式**：`request`、`auto-edit`、`smart`（新增）、`yolo`、`off`
 - **Web UI模式选择器**：输入框下方的快捷芯片，无需命令即可切换审批模式
-- **设置页面**：在 `设置 → 审批模式` 里配置六项审批选项（工具族名单、各模式 sandbox 策略、审批弹窗文案模板）。默认模式与未分类策略仅由部署方配置（在 `cordis.yml` 中设置）。
+- **设置页面**：在 `设置 → 审批模式` 里配置审批选项（工具族名单、各模式 sandbox 策略、审批弹窗文案模板，以及 smart 分类器的 provider/model）。默认模式、未分类策略与 smart 内部细节仅由部署方配置（在 `cordis.yml` 中设置）。
+- **Smart 模式 shell 分类器**：四步流水线（危险清单 → 会话记忆 → LLM 分类器 → fail-safe），自动放行例行 shell 命令，危险或不确定仍转人工。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
@@ -35,6 +36,7 @@
 |------|---------|-----------|---------|---------|----------|
 | `request` | 需审批 | 需审批 | 需审批 | 允许 | 最高安全性，所有修改都需要审批 |
 | `auto-edit` | 允许 | 需审批 | 需审批 | 允许 | 平衡模式，自动编辑文件但监控 Shell |
+| `smart` | 允许 | 分类器（4 步流水线） | 需审批 | 允许 | 例行 shell 自动放行，危险或不确定仍转人工 |
 | `yolo` | 允许 | 允许 | 允许 | 允许 | 无需审批，完全自动化 |
 | `off` | 允许 | 允许 | 允许 | 允许 | 禁用，恢复 DSH 默认行为 |
 
@@ -50,6 +52,12 @@
 - **沙箱**：自动切换到 `workspace-write`
 - **使用场景**：开发环境，信任文件修改但需要监控 Shell 命令
 
+#### `smart` - Shell 分类器（新增）
+- **行为**：编辑工具自动批准；shell 工具走 4 步流水线（危险清单 → 会话记忆 → LLM 分类器 → fail-safe）；未分类工具仍需审批；只读免审。批准过的调用在 `smartSessionMemoryTtlMs`（默认 30 分钟）内被会话记忆复用。
+- **沙箱**：自动切换到 `workspace-write`
+- **使用场景**：长流程设置循环，shell 命令多是例行的，审批会中断节奏。危险或不确定的 shell 仍弹给用户；危险清单是先于 LLM 的硬底。
+- **风险**：LLM 可能误判。危险清单无法枚举所有破坏性模式。插件重载通过 `AbortController` 终止在飞的分类调用。详见 Known Limitations 中的 "Smart Mode Risks"。
+
 #### `yolo` - 完全自动化
 - **行为**：所有工具都无需审批
 - **沙箱**：自动切换到 `workspace-write`
@@ -61,6 +69,8 @@
 - **使用场景**：临时禁用插件而不卸载
 
 **注意**：切换审批模式时，会自动联动调整沙箱模式到配置的默认值。这会覆盖您之前手动调整的沙箱设置。如果您希望在新的审批模式下使用不同的沙箱模式，可以在切换审批模式后再次手动调整沙箱。
+
+**与权限预设的联动**（宿主装了 `dsh-permission-presets` 时）：切换到非 off 模式会把沙箱+审批策略组合恢复到匹配的命名预设，避免落到孤立的 `custom` 状态。原理是找到 `(sandbox, ask)` 组合匹配该模式 `sandboxDefaults` 值的预设并应用；若没有匹配预设（例如您把 `sandboxDefaults.smart` 改成 `read-only`），插件回退到直接写 `sandbox/mode`，孤立状态由部署方负责。off 模式保持直接写 `sandbox/mode`（不联动预设——off 即「不关心预设」）。
 
 ## 安装
 
@@ -92,6 +102,7 @@ dsh plugin --profile web add /path/to/dsh-user-approval
 /approval-mode              # 显示当前模式
 /approval-mode request      # 切换到 request 模式
 /approval-mode auto-edit    # 切换到 auto-edit 模式
+/approval-mode smart        # 切换到 smart 模式（LLM shell 分类器）
 /approval-mode yolo         # 切换到 yolo 模式
 /approval-mode off          # 禁用（恢复默认）
 ```
@@ -205,6 +216,18 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 审批模式芯片注册在 composer 工具行的 `conversation.input.left` 座位，位于访问模式（权限）芯片旁边。当进入计划模式（`/plan`）时，平台会在 `conversation.input.plan` 座位渲染橘色的计划状态芯片 —— 该座位是平台命名的高占用（single）座位，harness 固定把它放在访问模式控件右侧 —— 因此计划框会出现在权限芯片与审批芯片之间。
 
 这一顺序由平台布局固定：`ui-conversation` 的 `InputBar` 在 "modes" 簇内、`conversation.input.left` 条目之前渲染 `conversation.input.plan`。插件无法在不重画整个计划控件的前提下移动该座位，而移动它需要对 `ui-conversation` 做平台级改动，本插件刻意不做。保持现状。
+
+### Smart 模式风险
+
+Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。分类器是「尽力而为」的加速器，不是安全边界。具体：
+
+- **LLM 可能误判。** 分类器可能把危险命令错认成例行而放行。13 条正则的危险清单作为硬底先于 LLM 跑（`rm -rf /`、`mkfs`、`curl|sh`、fork bomb 等），但无法枚举所有破坏性模式。仅在「最坏情况可恢复」的环境下使用 smart 模式。
+- **没有「为何放行」的可见性。** 分类器批准时，用户看不到提示，也看不到日志。每次工具的 evidence（`toolName`、`command`、`arguments`、`workspacePath`、`latestUserMessage`）只在 LLM 请求 payload 里。
+- **会话记忆只在进程内。** 记忆是 `Map<sha256(toolName + rawArguments), ...>` 的内存结构；DSH 重启即清空。重启后每个 shell 命令首跑都要重新付一次 LLM 成本。
+- **成本按唯一 shell 调用计。** 每条 shell 命令首次跑消耗一次 LLM 调用；TTL 内的重复免费。若用户没填 `smartProvider`/`smartModel`，host 默认沿用主对话模型，成本会偏高——选轻量模型降本。
+- **并发受 `smartSessionMemory` 容量限制。** 记忆按会话隔离，FIFO 上限 200 条；长会话周期性地把旧批准循环出去，那部分会重付 LLM 成本。
+- **插件重载会排空在飞分类。** 插件拥有一个 `AbortController`，其 signal 注入所有在飞 LLM 调用；卸载时 abort + `Promise.allSettled` drain 之后，新插件实例才接手。卡住的请求不会跨重载污染下游。
+- **两个 seam 都缺失时退回 ask。** 若 host 没有 `ctx.llm` 或 `ctx.agentDefaultModel`，smart 模式下每个 shell 调用都退回 ask（`detail: 'llm-unavailable'` 或 `'no-default-model'`）。分类器永远不会在「危险清单 + 分类器批准」之外的路径上静默放行。
 
 ## 自定义审批弹窗文案
 
@@ -357,14 +380,16 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 
 | 选项 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
-| `default` | string | `off` | 新会话的默认审批模式。选项：`request`、`auto-edit`、`yolo`、`off` |
+| `default` | string | `off` | 新会话的默认审批模式。选项：`request`、`auto-edit`、`smart`、`yolo`、`off` |
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor']` | 分类为"编辑"族的工具（文件修改） |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | 分类为"Shell"族的工具（命令执行） |
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']` | 分类为"只读"族的工具（始终允许） |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode']` | 始终绕过审批的工具 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
-| `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
+| `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
 | `askReason` | string | *见默认值* | 审批请求的自定义消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符 |
+| `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
+| `smartModel` | string \| null | `null` | smart 模式分类器的 LLM model（null = 继承 `agentDefaultModel`） |
 
 ### 默认审批原因
 

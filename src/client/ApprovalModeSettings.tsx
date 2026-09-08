@@ -47,8 +47,16 @@ const FALLBACK: Required<Config> = {
   readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'],
   autoAllowTools: ['ask_user_question', 'exit_plan_mode'],
   unclassified: 'ask',
-  sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', yolo: 'workspace-write' },
+  sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
   askReason: 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',
+  smartProvider: null,
+  smartModel: null,
+  smartExtraDangerPatterns: [],
+  smartDangerPatterns: null,
+  smartSessionMemory: true,
+  smartSessionMemoryTtlMs: 1_800_000,
+  smartTimeoutMs: 15_000,
+  smartClassifierPrompt: '',
 }
 
 /** Normalize a partial Config (TS view) into a fully-populated one. */
@@ -63,6 +71,14 @@ function readValue(snapshotValue: Config | undefined): Required<Config> {
     unclassified: c.unclassified ?? FALLBACK.unclassified,
     sandboxDefaults: c.sandboxDefaults ?? FALLBACK.sandboxDefaults,
     askReason: c.askReason ?? FALLBACK.askReason,
+    smartProvider: c.smartProvider ?? FALLBACK.smartProvider,
+    smartModel: c.smartModel ?? FALLBACK.smartModel,
+    smartExtraDangerPatterns: c.smartExtraDangerPatterns ?? FALLBACK.smartExtraDangerPatterns,
+    smartDangerPatterns: c.smartDangerPatterns ?? FALLBACK.smartDangerPatterns,
+    smartSessionMemory: c.smartSessionMemory ?? FALLBACK.smartSessionMemory,
+    smartSessionMemoryTtlMs: c.smartSessionMemoryTtlMs ?? FALLBACK.smartSessionMemoryTtlMs,
+    smartTimeoutMs: c.smartTimeoutMs ?? FALLBACK.smartTimeoutMs,
+    smartClassifierPrompt: c.smartClassifierPrompt ?? FALLBACK.smartClassifierPrompt,
   }
 }
 
@@ -192,7 +208,7 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
   }
 
   // SandboxDefaults is a single field; each mode row edits a sub-key.
-  const setSandboxMode = (mode: 'request' | 'auto-edit' | 'yolo', sandboxMode: string): void => {
+  const setSandboxMode = (mode: 'request' | 'auto-edit' | 'smart' | 'yolo', sandboxMode: string): void => {
     void scope.set('sandboxDefaults', { ...value.sandboxDefaults, [mode]: sandboxMode })
   }
 
@@ -316,6 +332,25 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           </FieldShell>
 
           <FieldShell
+            label={t('field.smartSandbox')}
+            descKey="desc.sandbox"
+            t={t}
+            onReset={() => { reset('sandboxDefaults') }}
+            resetLabel={t('reset.label')}
+          >
+            <EnumDropdown<'read-only' | 'workspace-write' | 'danger-full-access'>
+              value={value.sandboxDefaults.smart ?? 'workspace-write'}
+              items={[
+                { id: 'read-only', label: t('sandbox.read-only') },
+                { id: 'workspace-write', label: t('sandbox.workspace-write') },
+                { id: 'danger-full-access', label: t('sandbox.danger-full-access') },
+              ]}
+              resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
+              onChange={(next) => { setSandboxMode('smart', next) }}
+            />
+          </FieldShell>
+
+          <FieldShell
             label={t('field.sandboxYolo')}
             descKey="desc.sandbox"
             t={t}
@@ -331,6 +366,47 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
               ]}
               resolveLabel={(id) => t(`sandbox.${id}` as ApprovalPageKey)}
               onChange={(next) => { setSandboxMode('yolo', next) }}
+            />
+          </FieldShell>
+        </div>
+      </div>
+
+      {/* ── Smart classifier ─────────────────────────────────────────────── */}
+      <div className={css.subSection}>
+        <h3 className={css.subSectionHeader}>{t('section.smartClassifier')}</h3>
+        <div className={css.subSectionBody}>
+          <FieldShell
+            label={t('field.smartProvider')}
+            descKey="desc.smartProvider"
+            t={t}
+            onReset={() => { reset('smartProvider') }}
+            resetLabel={t('reset.label')}
+          >
+            <Input
+              value={value.smartProvider ?? ''}
+              placeholder={t('smartClassifier.provider.placeholder')}
+              className={css.csvInput}
+              onChange={(e) => {
+                const next = e.target.value
+                void scope.set('smartProvider', next === '' ? null : next)
+              }}
+            />
+          </FieldShell>
+          <FieldShell
+            label={t('field.smartModel')}
+            descKey="desc.smartModel"
+            t={t}
+            onReset={() => { reset('smartModel') }}
+            resetLabel={t('reset.label')}
+          >
+            <Input
+              value={value.smartModel ?? ''}
+              placeholder={t('smartClassifier.model.placeholder')}
+              className={css.csvInput}
+              onChange={(e) => {
+                const next = e.target.value
+                void scope.set('smartModel', next === '' ? null : next)
+              }}
             />
           </FieldShell>
         </div>

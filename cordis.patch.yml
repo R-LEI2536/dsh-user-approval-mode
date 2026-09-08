@@ -12,6 +12,7 @@
         sandboxDefaults:
           request: workspace-write
           auto-edit: workspace-write
+          smart: workspace-write
           yolo: workspace-write
         # askReason: 审批弹窗里那段理由文字。部署方可在自己的 cordis.yml 中
         # 覆盖为本族语言或自定义文本。

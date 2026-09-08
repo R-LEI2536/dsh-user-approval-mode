@@ -34,6 +34,26 @@ import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-commands'
+import {
+  compileSmartDangerPatterns,
+  createSmartSessionMemory,
+  createSmartShellEvaluator,
+  type CompiledSmartDangerPattern,
+  type SmartEvaluatorConfig,
+  type SmartLlmService,
+  type SmartDefaultModelService,
+  type SmartSessionMemory,
+} from './smart-classifier.js'
+import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
+import {
+  findAskPresetForSandbox,
+  type PermissionPresetsServiceLike,
+} from './permission-presets-helper.js'
+import {
+  getSandboxEscalation,
+  currentSandboxFor,
+  isSandboxEscalation,
+} from './sandbox-escalation.js'
 
 // 扩展 Context 类型声明（仅声明 shell，因为 sandboxPolicy 和 sessions 已在其他包中声明）
 declare module '@deepseek-ai/cordis' {
@@ -41,15 +61,19 @@ declare module '@deepseek-ai/cordis' {
     shell?: {
       sandboxMode?: SandboxMode
     }
+    /** Optional default-model selection service exposed by some hosts. The
+     *  smart classifier falls back to its `currentSelection()` when the user
+     *  left the provider/model fields blank in the settings page. */
+    agentDefaultModel?: SmartDefaultModelService
   }
 }
 
 export const name = 'dsh-user-approval'
 
 /** 审批模式闭值。`ask` 留给 approval policy，这里不用。 */
-export type ApprovalMode = 'request' | 'auto-edit' | 'yolo' | 'off'
+export type ApprovalMode = 'request' | 'auto-edit' | 'smart' | 'yolo' | 'off'
 /** 每个可切换的 ApprovalMode，用于校验与广告。 */
-export const APPROVAL_MODES: readonly ApprovalMode[] = ['request', 'auto-edit', 'yolo', 'off']
+export const APPROVAL_MODES: readonly ApprovalMode[] = ['request', 'auto-edit', 'smart', 'yolo', 'off']
 
 /** 工具族分类：编辑、shell、只读、未分类。 */
 type ToolFamily = 'edit' | 'shell' | 'readonly' | 'other'
@@ -73,9 +97,25 @@ export interface Config {
   /** 未分类工具的策略：`ask`（默认，fail-safe）或 `allow`。 */
   unclassified?: 'ask' | 'allow'
   /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
-  sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>
+  sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>
   /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。 */
   askReason?: string
+  /** Smart 分类器使用的 LLM provider。null = 继承 host 默认。 */
+  smartProvider?: string | null
+  /** Smart 分类器使用的 LLM model。null = 继承 host 默认。 */
+  smartModel?: string | null
+  /** 追加到内置 13 条危险清单之后的正则；命中直接转人工。 */
+  smartExtraDangerPatterns?: string[]
+  /** 整组替换内置 13 条危险清单。`null`（默认）保留内置；非 null 数组完全替换。 */
+  smartDangerPatterns?: string[] | null
+  /** 是否启用会话记忆（同 session 内同命令 TTL 内自动放行）。 */
+  smartSessionMemory?: boolean
+  /** 会话记忆 TTL（毫秒），默认 30 分钟。 */
+  smartSessionMemoryTtlMs?: number
+  /** 单次 LLM 分类调用的超时（毫秒），默认 15 秒。 */
+  smartTimeoutMs?: number
+  /** 分类器系统提示词；非空字符串覆盖内置 prompt。 */
+  smartClassifierPrompt?: string
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -107,6 +147,22 @@ export const Config: Schema<Config> = Schema.object({
   askReason: Schema.string()
     .default('approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell')
     .description('Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other).'),
+  smartProvider: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null)
+    .description('LLM provider route for the smart-mode shell classifier. Null inherits the host default-model selection.'),
+  smartModel: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null)
+    .description('LLM model id for the smart-mode shell classifier. Null inherits the host default-model selection.'),
+  smartExtraDangerPatterns: Schema.array(Schema.string()).default([])
+    .description('Append-only danger regex patterns the smart classifier checks before the LLM. Case-insensitive; compiled at startup.'),
+  smartDangerPatterns: Schema.union([Schema.array(Schema.string()), Schema.const(null)]).default(null)
+    .description('Replace the built-in 13 danger patterns entirely. Null (default) keeps the built-ins; a non-null array replaces them with the configured set. Use smartExtraDangerPatterns to APPEND without replacing. Deployer-only; not exposed in the settings page.'),
+  smartSessionMemory: Schema.boolean().default(true)
+    .description('Enable per-session memory that auto-approves a previously-classified shell call within the TTL window.'),
+  smartSessionMemoryTtlMs: Schema.number().step(1).min(1).max(2_147_483_647).default(1_800_000)
+    .description('TTL for a remembered shell approval, in milliseconds. Default 30 minutes.'),
+  smartTimeoutMs: Schema.number().step(1).min(1).max(2_147_483_647).default(15_000)
+    .description('Hard timeout for one classifier LLM call, in milliseconds. Any timeout falls back to manual review.'),
+  smartClassifierPrompt: Schema.string().min(1).default(DEFAULT_SMART_CLASSIFIER_PROMPT)
+    .description('System prompt for the smart classifier. Defaults to the built-in DEFAULT_SMART_CLASSIFIER_PROMPT (verbatim from dsh-auto-approve); any non-empty string overrides.'),
 })
 
 /**
@@ -137,8 +193,16 @@ export function apply(ctx: Context, config: Config): void {
     readOnlyTools: config.readOnlyTools ?? ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'],
     autoAllowTools: config.autoAllowTools ?? ['ask_user_question', 'exit_plan_mode'],
     unclassified: config.unclassified ?? 'ask',
-    sandboxDefaults: config.sandboxDefaults ?? { request: 'workspace-write', 'auto-edit': 'workspace-write', yolo: 'workspace-write' },
+    sandboxDefaults: config.sandboxDefaults ?? { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
     askReason: config.askReason ?? 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',
+    smartProvider: config.smartProvider ?? null,
+    smartModel: config.smartModel ?? null,
+    smartExtraDangerPatterns: config.smartExtraDangerPatterns ?? [],
+    smartDangerPatterns: config.smartDangerPatterns ?? null,
+    smartSessionMemory: config.smartSessionMemory ?? true,
+    smartSessionMemoryTtlMs: config.smartSessionMemoryTtlMs ?? 1_800_000,
+    smartTimeoutMs: config.smartTimeoutMs ?? 15_000,
+    smartClassifierPrompt: config.smartClassifierPrompt ?? DEFAULT_SMART_CLASSIFIER_PROMPT,
   }
 
   // 组合默认 sandbox：无 session 覆盖时沙箱旋钮应落回的值（off 联动写回它）。
@@ -174,12 +238,79 @@ export function apply(ctx: Context, config: Config): void {
     const unclassified = cfgThunk().unclassified ?? 'ask'
     if (mode === 'request') return family === 'edit' || family === 'shell' || (family === 'other' && unclassified === 'ask')
     if (mode === 'auto-edit') return family === 'shell' || (family === 'other' && unclassified === 'ask')
+    if (mode === 'smart') return family === 'other' && unclassified === 'ask'
     return false // off / yolo：全放行
   }
+
+  // Logger helper for smart-mode decisions. Wrapped in try/catch because a
+  // broken logger must never change an approval outcome (mirrors the
+  // safety posture of `dsh-auto-approve`'s `logDecision`). The plugin tag
+  // and `ask|allow` vocabulary match the gate's public decision kinds so
+  // deployers can grep the dsh log for every prompt the smart classifier
+  // produced.
+  const logSmartDecision = (decision: 'ask' | 'allow', detail: string): void => {
+    try {
+      ctx.logger.info(`[dsh-user-approval[smart]] decision=${decision} ${detail}`)
+    } catch {
+      // Swallow logger failures; the decision has already been computed.
+    }
+  }
+
+  // ── Smart-mode evaluator lifecycle ────────────────────────────────────────
+  // The classifier is only useful when smart mode is in play, but the
+  // evaluator state (compiled patterns, session memory, AbortController)
+  // is cheap to keep alive regardless. Plugin unload aborts in-flight
+  // LLM calls via `lifetimeSignal` and drains the active set.
+  const lifetimeController = new AbortController()
+  const lifetimeSignal = lifetimeController.signal
+  const smartMemory: SmartSessionMemory = createSmartSessionMemory(1_800_000)
+  const activeEvaluations = new Set<Promise<unknown>>()
+
+  const smartEvaluator = (exec: { name: string; arguments: unknown }, session: Session) => {
+    const cfg = cfgThunk()
+    const smartCfg: SmartEvaluatorConfig = {
+      smartExtraDangerPatterns: cfg.smartExtraDangerPatterns ?? [],
+      smartDangerPatterns: cfg.smartDangerPatterns ?? null,
+      smartSessionMemory: cfg.smartSessionMemory ?? true,
+      smartSessionMemoryTtlMs: cfg.smartSessionMemoryTtlMs ?? 1_800_000,
+      smartTimeoutMs: cfg.smartTimeoutMs ?? 15_000,
+      smartClassifierPrompt: cfg.smartClassifierPrompt ?? DEFAULT_SMART_CLASSIFIER_PROMPT,
+      smartProvider: cfg.smartProvider ?? null,
+      smartModel: cfg.smartModel ?? null,
+    }
+    const patterns = compileSmartDangerPatterns(smartCfg.smartDangerPatterns, smartCfg.smartExtraDangerPatterns)
+    // Cast to our narrower `SmartLlmService` — the host's LlmRuntime.stream
+    // signature is structurally compatible, but TypeScript's `messages` is
+    // mutable there and `readonly` here. We never mutate downstream.
+    const llm = ctx.get('llm') as SmartLlmService | undefined
+    const defaultModel = ctx.get('agentDefaultModel')
+    const task = createSmartShellEvaluator({
+      config: smartCfg,
+      patterns,
+      llm,
+      defaultModel,
+      memory: smartMemory,
+      lifetimeSignal,
+    })(exec, session)
+    const tracked = Promise.resolve().then(() => task).finally(() => activeEvaluations.delete(tracked))
+    activeEvaluations.add(tracked)
+    return tracked
+  }
+
+  ctx.effect(() => {
+    return async () => {
+      // Plugin unload: stop new classifications, wait for in-flight ones,
+      // then drop the per-session memory. After this returns the resolver
+      // sees `lifetimeSignal.aborted === true` and short-circuits to ask.
+      lifetimeController.abort(new Error('dsh-user-approval-mode[smart]: plugin unloaded'))
+      await Promise.allSettled([...activeEvaluations])
+    }
+  }, 'dsh-user-approval-mode[smart]: drain in-flight classifiers')
 
   // ── 闸：每个工具调用分发前裁决 ─────────────────────────────────────────
   // 先 next() 取下游裁决再决定：下游 deny/ask 保持，只有下游 allow 且本模式
   // 要求弹时才升级为 ask；off/yolo 原样放行（= 官方原版）。
+  // Smart 模式下 shell 族在闸里额外走 4 步裁决（详见 smart-classifier.ts）。
   ctx.on('tools/pre-execute', async (exec, next) => {
     const decision = await next()
     if (decision.kind !== 'allow') return decision
@@ -191,6 +322,41 @@ export function apply(ctx: Context, config: Config): void {
     const mode = effectiveMode(agent.session)
     const family = familyOf(exec.name)
     if (family === 'readonly') return decision
+
+    // Smart 模式 + shell 族：先做提权拦截，再走 4 步裁决流水线（危险清单
+    // → 会话记忆 → LLM 分类器 → fail-safe）。提权强制 ask，分类器
+    // 永远不会代决 sandbox 升级——即使下游 preset 配成 auto-allow。
+    if (mode === 'smart' && family === 'shell') {
+      const escalation = getSandboxEscalation(exec.arguments)
+      if (escalation !== undefined) {
+        const effective = currentSandboxFor(
+          sandboxPolicy?.overrideOf(agent.session),
+          compositionDefaultSandbox as SandboxMode | undefined,
+        )
+        if (isSandboxEscalation(escalation.requested, effective)) {
+          logSmartDecision('ask', `detail=sandbox-escalation ${effective}->${escalation.requested}`)
+          return {
+            kind: 'ask',
+            reason: `sandbox 升级 ${effective} → ${escalation.requested}，需用户确认（${escalation.justification}）`,
+          }
+        }
+      }
+      const verdict = await smartEvaluator(exec, agent.session)
+      if (verdict.kind === 'allow') {
+        logSmartDecision('allow', `detail=${verdict.source}`)
+        return { kind: 'allow' }
+      }
+      logSmartDecision('ask', `detail=${verdict.detail}`)
+      return {
+        kind: 'ask',
+        reason: (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
+          .replace('{tool}', exec.name)
+          .replace('{mode}', mode)
+          .replace('{family}', family)
+          + (verdict.detail ? ` [smart: ${verdict.detail}]` : ''),
+      }
+    }
+
     if (!needsAsk(mode, family)) return decision
     return {
       kind: 'ask',
@@ -202,22 +368,57 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   // ── 切换：写 mode + 联动写 sandbox ───────────────────────────────────────
+  // Permission-presets (sibling @deepseek-ai/dsh-* package) bundles
+  // (sandbox, approval-policy) into named presets. When mounted, a
+  // manual preset pick (e.g. user picked `danger-full-access`) leaves an
+  // `approval/policy: never` in the session log; switching our approval
+  // mode rewrites the sandbox to `workspace-write`, leaving the pair
+  // mismatched → permission-presets' derive falls back to `custom`.
+  //
+  // For non-off modes we delegate the bundle write to permission-presets
+  // when a matching preset exists; the off mode keeps direct sandbox
+  // writes (no preset bundle — off is "I don't care about presets").
+  //
+  // The service handle is resolved LAZILY at every applyMode call,
+  // not captured at apply() time: cordis does not guarantee that
+  // dsh-permission-presets has finished mounting before our plugin's
+  // `apply()` runs, and a top-level `ctx.get()` would freeze `undefined`
+  // for the rest of this plugin's lifetime.
+  const applyModeSandboxChange = (session: Session, mode: ApprovalMode, sandbox: SandboxMode): void => {
+    if (mode === 'off') {
+      setSandboxMode(session, sandbox)
+      return
+    }
+    const permissionPresets = ctx.get('permissionPresets') as PermissionPresetsServiceLike | undefined
+    const presetName = findAskPresetForSandbox(permissionPresets, sandbox)
+    if (presetName !== undefined && permissionPresets !== undefined) {
+      permissionPresets.set(session, presetName)
+      return
+    }
+    // No matching preset (permission-presets missing or sandbox doesn't
+    // pair with `ask` in any preset — e.g. user customized
+    // sandboxDefaults.smart to `read-only`). Fall back to writing
+    // sandbox alone; the approval-policy may then be in any state the
+    // user left it. The orphan state is the deployer's call.
+    setSandboxMode(session, sandbox)
+  }
+
   const applyMode = (session: Session, mode: ApprovalMode): { previous: ApprovalMode; sandboxChanged: boolean } => {
     const previous = effectiveMode(session)
     setApprovalMode(session, mode)
-    const sandboxDefaults = cfgThunk().sandboxDefaults ?? { request: 'workspace-write', 'auto-edit': 'workspace-write', yolo: 'workspace-write' }
+    const sandboxDefaults = cfgThunk().sandboxDefaults ?? { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' }
     const sandbox = mode === 'off'
       ? compositionDefaultSandbox
-      : (sandboxDefaults[mode as 'request' | 'auto-edit' | 'yolo'] ?? 'workspace-write')
+      : (sandboxDefaults[mode as 'request' | 'auto-edit' | 'smart' | 'yolo'] ?? 'workspace-write')
     const sandboxChanged = sandboxPolicy?.overrideOf(session) !== sandbox
-    if (sandboxChanged) setSandboxMode(session, sandbox as SandboxMode)
+    if (sandboxChanged) applyModeSandboxChange(session, mode, sandbox as SandboxMode)
     return { previous, sandboxChanged }
   }
 
   ctx.inject(['commands'], (commandCtx) => {
     commandCtx.commands.register({
       name: 'approval-mode',
-      description: 'Switch the approval mode (request | auto-edit | yolo | off)',
+      description: 'Switch the approval mode (request | auto-edit | smart | yolo | off)',
       input: { hint: '<mode>' },
       handler: ({ agent, rawInput }) => {
         const trimmed = rawInput.trim()

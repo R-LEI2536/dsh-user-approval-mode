@@ -24,7 +24,7 @@ export type ApprovalModeChipProps =
   & InjectFace<ApprovalModeChipInjected>
   & { t: (key: ApprovalKey) => string }
 
-const DEFAULT_MODES: ApprovalMode[] = ['off', 'request', 'auto-edit', 'yolo']
+const DEFAULT_MODES: ApprovalMode[] = ['off', 'request', 'auto-edit', 'smart', 'yolo']
 
 /**
  * Render the approval mode selector chip.

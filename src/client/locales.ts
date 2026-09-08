@@ -16,6 +16,7 @@ export const en = {
   'mode.off': 'Off',
   'mode.request': 'Request',
   'mode.auto-edit': 'Auto-edit',
+  'mode.smart': 'Smart',
   'mode.yolo': 'Yolo',
 }
 
@@ -24,6 +25,7 @@ export const zh = {
   'mode.off': '关闭',
   'mode.request': '请求授权',
   'mode.auto-edit': '自动编辑',
+  'mode.smart': '智能',
   'mode.yolo': 'Yolo',
 }
 
@@ -36,12 +38,13 @@ export const enPage = {
   'nav.label': 'Approval Modes',
 
   // Page intro
-  'intro': 'Configure tool classification, sandbox policy, and the approval dialog template. The default mode and unclassified strategy are set in cordis.yml.',
+  'intro': 'Configure tool classification, sandbox policy, the approval dialog template, and the smart-mode shell classifier. The default mode and unclassified strategy are set in cordis.yml.',
 
   // Sub-section headers
   'section.tools': 'Tool classification',
   'section.sandbox': 'Sandbox policy',
   'section.dialog': 'Approval prompt',
+  'section.smartClassifier': 'Smart classifier',
 
   // Field labels
   'field.editTools': 'Edit tools',
@@ -50,8 +53,11 @@ export const enPage = {
   'field.autoAllowTools': 'Auto-allow tools',
   'field.sandboxRequest': 'Request mode sandbox',
   'field.sandboxAutoEdit': 'Auto-edit mode sandbox',
+  'field.smartSandbox': 'Smart mode sandbox',
   'field.sandboxYolo': 'Yolo mode sandbox',
   'field.askReason': 'Approval prompt text',
+  'field.smartProvider': 'Provider',
+  'field.smartModel': 'Model',
 
   // Field descriptions (rendered in ?-icon tooltips)
   'desc.editTools': 'Tools classified as the "edit" family — file modifications. Auto-approved under auto-edit mode.',
@@ -60,6 +66,8 @@ export const enPage = {
   'desc.autoAllowTools': 'Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting).',
   'desc.sandbox': 'Sandbox policy the plugin writes when switching into each mode. The "off" mode restores the composition default instead.',
   'desc.askReason': 'Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other).',
+  'desc.smartProvider': 'LLM provider for the smart-mode shell classifier. Leave empty to inherit the host default model.',
+  'desc.smartModel': 'LLM model id for the smart-mode shell classifier. Leave empty to inherit the host default model. A lighter model reduces per-shell-call cost.',
 
   // Sandbox dropdown options (English form, same in en + zh — these are
   // technical identifiers that match the schema values).
@@ -70,6 +78,10 @@ export const enPage = {
   // CSV input placeholder (one per tool family). Set notation hints that
   // order is irrelevant and duplicates are folded on commit.
   'csv.placeholder': '{write, edit, str_replace_editor}',
+
+  // Smart classifier provider/model placeholders.
+  'smartClassifier.provider.placeholder': 'e.g. deepseek-official',
+  'smartClassifier.model.placeholder': 'e.g. deepseek-chat',
 
   // Reset button (always visible per field)
   'reset.label': 'Reset',
@@ -83,12 +95,13 @@ export const zhPage = {
   'nav.label': '审批模式',
 
   // Page intro
-  'intro': '配置工具族分类、各模式 sandbox 策略、审批弹窗文案模板。默认模式与未分类策略写在 cordis.yml 里。',
+  'intro': '配置工具族分类、各模式 sandbox 策略、审批弹窗文案模板，以及 smart 模式 shell 分类器。默认模式与未分类策略写在 cordis.yml 里。',
 
   // Sub-section headers
   'section.tools': '工具族分类',
   'section.sandbox': 'Sandbox 策略',
   'section.dialog': '审批弹窗',
+  'section.smartClassifier': 'Smart 分类器',
 
   // Field labels
   'field.editTools': '编辑族工具',
@@ -97,8 +110,11 @@ export const zhPage = {
   'field.autoAllowTools': '自动放行工具',
   'field.sandboxRequest': 'Request 模式的 sandbox',
   'field.sandboxAutoEdit': 'Auto-edit 模式的 sandbox',
+  'field.smartSandbox': 'Smart 模式的 sandbox',
   'field.sandboxYolo': 'Yolo 模式的 sandbox',
   'field.askReason': '审批弹窗文案',
+  'field.smartProvider': 'Provider',
+  'field.smartModel': 'Model',
 
   // Field descriptions
   'desc.editTools': '归为「编辑族」的工具——文件修改类。在 auto-edit 模式下自动放行。',
@@ -107,6 +123,8 @@ export const zhPage = {
   'desc.autoAllowTools': '绕过审批的工具，与族无关。与任何族名单重叠无副作用（冗余但不冲突）。',
   'desc.sandbox': '切到每个模式时插件联动写入的 sandbox 策略。off 模式则恢复为组合默认 sandbox。',
   'desc.askReason': '审批弹窗里显示的文案模板。占位符：{tool}（工具名）、{mode}（当前审批模式）、{family}（edit | shell | readonly | other）。',
+  'desc.smartProvider': 'smart 模式 shell 分类器使用的 LLM provider。留空则继承宿主默认模型。',
+  'desc.smartModel': 'smart 模式 shell 分类器使用的模型 id。留空则继承宿主默认模型；选轻量模型可降低每次 shell 调用的成本。',
 
   // Sandbox dropdown options — same English form as en, since these are
   // technical identifiers that match the schema values.
@@ -117,6 +135,10 @@ export const zhPage = {
   // CSV input placeholder (same English form as en — set notation is
   // language-neutral).
   'csv.placeholder': '{write, edit, str_replace_editor}',
+
+  // Smart classifier placeholders (English form, technical identifiers).
+  'smartClassifier.provider.placeholder': 'e.g. deepseek-official',
+  'smartClassifier.model.placeholder': 'e.g. deepseek-chat',
 
   // Reset button
   'reset.label': '重置',
