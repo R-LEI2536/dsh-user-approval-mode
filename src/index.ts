@@ -156,7 +156,7 @@ export const Config: Schema<Config> = Schema.object({
   smartDangerPatterns: Schema.union([Schema.array(Schema.string()), Schema.const(null)]).default(null)
     .description('Replace the built-in 13 danger patterns entirely. Null (default) keeps the built-ins; a non-null array replaces them with the configured set. Use smartExtraDangerPatterns to APPEND without replacing. Deployer-only; not exposed in the settings page.'),
   smartSessionMemory: Schema.boolean().default(true)
-    .description('Enable per-session memory that auto-approves a previously-classified-or-human-approved shell call within the TTL window.'),
+    .description('Enable per-session memory that auto-approves a previously-classified shell call within the TTL window.'),
   smartSessionMemoryTtlMs: Schema.number().step(1).min(1).max(2_147_483_647).default(1_800_000)
     .description('TTL for a remembered shell approval, in milliseconds. Default 30 minutes.'),
   smartTimeoutMs: Schema.number().step(1).min(1).max(2_147_483_647).default(15_000)

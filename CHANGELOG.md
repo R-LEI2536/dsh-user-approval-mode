@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Documentation claimed a `'human'` source memory path that was never
+  wired** — `CONTEXT.md` (`Smart session memory` section) and the
+  `smartSessionMemory` schema description both stated entries could be
+  written when "the human granting an escalated ask", but the smart gate
+  sits at `tools/pre-execute` and never observes the downstream approval
+  dialog outcome. The `'human'` source type stays in the memory API
+  surface as a reserved slot, but no code path writes it today. Both
+  spots now describe the classifier-only reality; a future DSH event
+  could backfill the human source without API churn.
 - **Sandbox reset leaves orphan `custom` preset state** — when a user
   manually picked a non-workspace-write permission preset (e.g.
   `danger-full-access`) and then ran `/approval-mode <mode>`, the
