@@ -45,6 +45,10 @@ import {
   type SmartSessionMemory,
 } from './smart-classifier.js'
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
+import {
+  findAskPresetForSandbox,
+  type PermissionPresetsServiceLike,
+} from './permission-presets-helper.js'
 
 // 扩展 Context 类型声明（仅声明 shell，因为 sandboxPolicy 和 sessions 已在其他包中声明）
 declare module '@deepseek-ai/cordis' {
@@ -320,6 +324,36 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   // ── 切换：写 mode + 联动写 sandbox ───────────────────────────────────────
+  // Permission-presets (sibling @deepseek-ai/dsh-* package) bundles
+  // (sandbox, approval-policy) into named presets. When mounted, a
+  // manual preset pick (e.g. user picked `danger-full-access`) leaves an
+  // `approval/policy: never` in the session log; switching our approval
+  // mode rewrites the sandbox to `workspace-write`, leaving the pair
+  // mismatched → permission-presets' derive falls back to `custom`.
+  //
+  // For non-off modes we delegate the bundle write to permission-presets
+  // when a matching preset exists; the off mode keeps direct sandbox
+  // writes (no preset bundle — off is "I don't care about presets").
+  const permissionPresets = ctx.get('permissionPresets') as PermissionPresetsServiceLike | undefined
+
+  const applyModeSandboxChange = (session: Session, mode: ApprovalMode, sandbox: SandboxMode): void => {
+    if (mode === 'off') {
+      setSandboxMode(session, sandbox)
+      return
+    }
+    const presetName = findAskPresetForSandbox(permissionPresets, sandbox)
+    if (presetName !== undefined && permissionPresets !== undefined) {
+      permissionPresets.set(session, presetName)
+      return
+    }
+    // No matching preset (permission-presets missing or sandbox doesn't
+    // pair with `ask` in any preset — e.g. user customized
+    // sandboxDefaults.smart to `read-only`). Fall back to writing
+    // sandbox alone; the approval-policy may then be in any state the
+    // user left it. The orphan state is the deployer's call.
+    setSandboxMode(session, sandbox)
+  }
+
   const applyMode = (session: Session, mode: ApprovalMode): { previous: ApprovalMode; sandboxChanged: boolean } => {
     const previous = effectiveMode(session)
     setApprovalMode(session, mode)
@@ -328,7 +362,7 @@ export function apply(ctx: Context, config: Config): void {
       ? compositionDefaultSandbox
       : (sandboxDefaults[mode as 'request' | 'auto-edit' | 'smart' | 'yolo'] ?? 'workspace-write')
     const sandboxChanged = sandboxPolicy?.overrideOf(session) !== sandbox
-    if (sandboxChanged) setSandboxMode(session, sandbox as SandboxMode)
+    if (sandboxChanged) applyModeSandboxChange(session, mode, sandbox as SandboxMode)
     return { previous, sandboxChanged }
   }
 

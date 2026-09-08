@@ -71,6 +71,18 @@ The approval modes are inspired by [Qwen Code](https://github.com/QwenLM/Qwen-Co
 
 **Note**: When switching approval modes, the sandbox mode is automatically adjusted to the configured default value. This will override any previous manual sandbox adjustments you made. If you wish to use a different sandbox mode with the new approval mode, you can manually adjust the sandbox again after switching.
 
+**Permission-presets interaction** (when the host has `dsh-permission-presets`
+mounted): switching to a non-off approval mode restores the matching
+preset bundle so the sandbox + approval-policy combination stays on a
+named preset instead of falling back to the orphan `custom` state. The
+helper finds the preset whose `(sandbox, approval)` bundle pairs the
+mode's `sandboxDefaults` value with `ask` and applies it; if no preset
+matches (e.g. you customized `sandboxDefaults.smart = 'read-only'`), the
+plugin falls back to writing `sandbox/mode` directly and the UI is
+responsible for the orphan state. The off mode keeps the direct
+`sandbox/mode` write (no preset bundle — off is "I don't care about
+presets").
+
 ## Installation
 
 ### From GitHub

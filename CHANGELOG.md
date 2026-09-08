@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Sandbox reset leaves orphan `custom` preset state** — when a user
+  manually picked a non-workspace-write permission preset (e.g.
+  `danger-full-access`) and then ran `/approval-mode <mode>`, the
+  plugin wrote `sandbox/mode: workspace-write` but left the prior
+  `approval/policy: never` in place. The resulting
+  `workspace-write + never` combination matches no preset, so
+  `dsh-permission-presets`' UI chip rendered `custom`. The fix
+  delegates the sandbox-mode change to `permissionPresets.set()`
+  when a preset matching `(sandbox, ask)` exists, restoring the named
+  preset in one shot. The `off` mode keeps the direct `sandbox/mode`
+  write (no preset bundle — off is "I don't care about presets"). Falls
+  back to direct `sandbox/mode` write when `permission-presets` isn't
+  mounted or no preset matches (e.g. deployer customized
+  `sandboxDefaults` to `read-only`).
+- New helper module `src/permission-presets-helper.ts` and 8-case test
+  `test/permission-presets-helper.test.ts` cover the preset-pick logic.
+
 ## [0.4.0] - 2026-09-08
 
 ### Added
