@@ -34,6 +34,9 @@ interface HarnessOptions {
   llmAvailable?: boolean
   memory?: SmartSessionMemory
   lifetimeSignal?: AbortSignal
+  /** When set, the harness attaches this events array to the session stub
+   *  via `snapshotEvents()`. Used by the tooLong short-circuit test. */
+  sessionEvents?: readonly unknown[]
 }
 
 interface Harness {
@@ -46,6 +49,7 @@ interface Harness {
 
 const baseConfig: SmartEvaluatorConfig = {
   smartExtraDangerPatterns: [],
+  smartDangerPatterns: null,
   smartSessionMemory: true,
   smartSessionMemoryTtlMs: 60_000,
   smartTimeoutMs: 1_000,
@@ -71,7 +75,10 @@ function hangingStream(): AsyncIterable<unknown> {
 }
 
 function makeHarness(options: HarnessOptions = {}): Harness {
-  const patterns = compileSmartDangerPatterns(options.configOverrides?.smartExtraDangerPatterns ?? [])
+  const patterns = compileSmartDangerPatterns(
+    options.configOverrides?.smartDangerPatterns ?? baseConfig.smartDangerPatterns,
+    options.configOverrides?.smartExtraDangerPatterns ?? [],
+  )
   const config: SmartEvaluatorConfig = { ...baseConfig, ...options.configOverrides }
   const memory = options.memory ?? createSmartSessionMemory(config.smartSessionMemoryTtlMs)
   const lifetimeSignal = options.lifetimeSignal ?? new AbortController().signal
@@ -114,12 +121,21 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     lifetimeSignal,
   })
 
+  const sessionStub = options.sessionEvents !== undefined
+    ? {
+        id: 'session-stub',
+        header: { cwd: '/tmp' },
+        snapshotEvents: () => options.sessionEvents ?? [],
+      }
+    : {
+        id: 'session-stub',
+        header: { cwd: '/tmp' },
+      }
+
   return {
     evaluate: async (exec) => evaluator(
       { name: exec.name, arguments: exec.arguments },
-      // Cast the session stub — only `id` and `header` are read by the
-      // pipeline; the test never feeds events or tools.
-      { id: 'session-stub' as never, header: { cwd: '/tmp' } } as never,
+      sessionStub as never,
     ) as unknown as Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string }>,
     memory,
     get streamCalls() { return streamCalls.value },
@@ -274,4 +290,58 @@ test('evaluator: stream that emits tool-call → ask with detail=tool-call', asy
   const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'ls' } })
   assert.equal(verdict.kind, 'ask')
   assert.equal(verdict.detail, 'tool-call')
+})
+
+test('evaluator: tooLong user message → ask, no LLM call', async () => {
+  const oversized = 'x'.repeat(2001)
+  const events = [{
+    type: 'user/message',
+    data: {
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: oversized }],
+    },
+  }]
+  const h = makeHarness({ sessionEvents: events })
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'ls' } })
+  assert.equal(verdict.kind, 'ask')
+  assert.equal(verdict.detail, 'latest-user-message-too-long')
+  assert.equal(h.streamCalls, 0, 'tooLong guard must skip the LLM call')
+})
+
+test('evaluator: tooLong user message still respects session memory', async () => {
+  // When the same call already lives in session memory, the tooLong guard
+  // sits AFTER memory lookup and must NOT override a remembered grant.
+  const oversized = 'x'.repeat(2001)
+  const events = [{
+    type: 'user/message',
+    data: {
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: oversized }],
+    },
+  }]
+  const memory = createSmartSessionMemory(60_000)
+  const args = { command: 'npm test' }
+  // Seed via a clean evaluator first (without events so we don't trigger tooLong).
+  const setup = makeHarness({ memory })
+  await setup.evaluate({ name: 'bash', arguments: args })
+  // Now ask again with an oversized user message — memory should still hit.
+  const h = makeHarness({ memory, sessionEvents: events })
+  const verdict = await h.evaluate({ name: 'bash', arguments: args })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(verdict.source, 'remembered')
+  assert.equal(h.streamCalls, 0)
+})
+
+test('evaluator: under-budget user message reaches the LLM normally', async () => {
+  const events = [{
+    type: 'user/message',
+    data: {
+      source: { kind: 'user' },
+      content: [{ type: 'text', text: 'short message' }],
+    },
+  }]
+  const h = makeHarness({ sessionEvents: events })
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'ls' } })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(h.streamCalls, 1)
 })

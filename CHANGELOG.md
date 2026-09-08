@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`smartDangerPatterns` deployer-only field** — `string[] | null` (default
+  `null`). When non-null, REPLACES the built-in 13 danger patterns entirely
+  before `smartExtraDangerPatterns` is appended on top. Mirrors the
+  `dangerPatterns` switch on `dsh-auto-approve`. Cordis-only; not exposed in
+  the settings page. Deployment example:
+
+  ```yaml
+  - id: dsh-user-approval-mode
+    config:
+      smartDangerPatterns:
+        - '\bkubectl\s+delete\b'
+        - '\bdsh\s+plugin\s+add\b'
+      smartExtraDangerPatterns: []
+  ```
+
+- **Smart-gate decision logger** — every smart-mode shell verdict now
+  emits one line via `ctx.logger.info`, format
+  `[dsh-user-approval[smart]] decision=<ask|allow> <detail>`. Logger
+  failures are swallowed so a broken logger never changes an approval
+  outcome. The vocabulary matches the gate's public `ask|allow` kinds
+  so deployers can `grep "decision=ask"` to surface every classifier
+  escalation.
+
+### Changed
+
+- **`latestUserMessage` overflow short-circuits in smart mode** — when the
+  newest genuine user message exceeds the 2000-character budget, the
+  classifier pipeline now skips the LLM call and routes directly to
+  manual review with `detail=latest-user-message-too-long`. The guard sits
+  AFTER the session-memory lookup (so a remembered grant still wins)
+  and BEFORE the LLM call (so we never invoke the model on truncated
+  trusted context). Mirrors `dsh-auto-approve`'s posture exactly.
+
 ### Fixed
 
 - **Sandbox reset leaves orphan `custom` preset state** — when a user

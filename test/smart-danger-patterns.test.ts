@@ -14,7 +14,7 @@ import {
 } from '../src/smart-classifier.ts'
 import { DEFAULT_SMART_DANGER_PATTERNS } from '../src/smart-danger-patterns.ts'
 
-const patterns = compileSmartDangerPatterns([])
+const patterns = compileSmartDangerPatterns(null, [])
 
 const cases: ReadonlyArray<readonly [string, string, string]> = [
   // [description, command-that-must-hit, command-that-must-NOT-hit]
@@ -55,14 +55,38 @@ test('smart-danger-patterns: built-in constant has 13 sources', () => {
 
 test('compileSmartDangerPatterns: rejects invalid regex', () => {
   assert.throws(
-    () => compileSmartDangerPatterns(['(unclosed']),
+    () => compileSmartDangerPatterns(null, ['(unclosed']),
     /invalid danger pattern/,
   )
 })
 
 test('compileSmartDangerPatterns: appends extras after the built-ins', () => {
   const extras = ['\\bforbidden-tool\\b']
-  const compiled = compileSmartDangerPatterns(extras)
+  const compiled = compileSmartDangerPatterns(null, extras)
   assert.ok(compiled.length >= patterns.length + 1)
   assert.ok(findSmartDangerMatch('run forbidden-tool', compiled) !== undefined)
+})
+
+test('compileSmartDangerPatterns: null primary keeps the 13 built-ins', () => {
+  const compiled = compileSmartDangerPatterns(null, [])
+  assert.equal(compiled.length, 13)
+  assert.ok(findSmartDangerMatch('rm -rf /', compiled) !== undefined)
+})
+
+test('compileSmartDangerPatterns: non-null primary REPLACES the built-ins', () => {
+  const compiled = compileSmartDangerPatterns(['\\bonly-this\\b'], [])
+  assert.equal(compiled.length, 1)
+  assert.ok(findSmartDangerMatch('run only-this now', compiled) !== undefined)
+  assert.equal(
+    findSmartDangerMatch('rm -rf /', compiled),
+    undefined,
+    'replacement list must NOT include the built-ins',
+  )
+})
+
+test('compileSmartDangerPatterns: replacement primary + extras appends extras on top', () => {
+  const compiled = compileSmartDangerPatterns(['\\bA\\b'], ['\\bB\\b'])
+  assert.equal(compiled.length, 2)
+  assert.ok(findSmartDangerMatch('run A', compiled) !== undefined)
+  assert.ok(findSmartDangerMatch('run B', compiled) !== undefined)
 })

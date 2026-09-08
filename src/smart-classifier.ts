@@ -37,6 +37,7 @@ export interface CompiledSmartDangerPattern {
  *  settings thunk, so values reflect the latest user/deployer edits. */
 export interface SmartEvaluatorConfig {
   readonly smartExtraDangerPatterns: readonly string[]
+  readonly smartDangerPatterns: readonly string[] | null
   readonly smartSessionMemory: boolean
   readonly smartSessionMemoryTtlMs: number
   readonly smartTimeoutMs: number
@@ -79,13 +80,17 @@ export type SmartShellEvaluator = (
 
 // ─── Danger patterns ────────────────────────────────────────────────────────
 
-/** Compile the configured danger patterns. The 13 built-ins always run
- *  (unless the deployer explicitly overrides `dangerPatterns` — we do not
- *  expose that switch yet); `smartExtraDangerPatterns` appends. */
+/** Compile the configured danger patterns. When `primary` is `null` the
+ *  13 built-in `DEFAULT_SMART_DANGER_PATTERNS` run; when it is an array the
+ *  deployer-supplied list REPLACES the built-ins entirely (mirrors the
+ *  `dangerPatterns` switch on `dsh-auto-approve`). `extraPatterns` always
+ *  appends on top of whichever primary list won. */
 export function compileSmartDangerPatterns(
+  primary: readonly string[] | null,
   extraPatterns: readonly string[],
 ): readonly CompiledSmartDangerPattern[] {
-  const merged: readonly string[] = [...DEFAULT_SMART_DANGER_PATTERNS, ...extraPatterns]
+  const base: readonly string[] = primary ?? DEFAULT_SMART_DANGER_PATTERNS
+  const merged: readonly string[] = [...base, ...extraPatterns]
   return merged.map((source) => {
     try {
       return Object.freeze({ source, regexp: new RegExp(source, 'i') })
@@ -150,14 +155,17 @@ export function commandFromArguments(args: unknown): string | undefined {
 
 const LATEST_USER_MESSAGE_MAX_CHARS = 2000
 
-/** Return the newest genuine user message text, or null when there is no
- *  such event, the message is image-only, or it overflows the budget.
- *  Overflow returns null (same strategy as `dsh-auto-approve`): truncating
- *  trusted context is worse than handing the classifier less of it. */
+/** Result of reading the newest genuine user message: the joined text (or
+ *  null when there is no message / it is image-only), plus a `tooLong`
+ *  flag that fires when the budget is exceeded. Mirrors the
+ *  `dsh-auto-approve` shape so the caller's tooLong short-circuit sits in
+ *  the same place (after the danger list and session memory, before the
+ *  LLM call). Truncating trusted context is worse than handing the
+ *  classifier less of it. */
 export function latestUserMessageText(
   events: readonly SessionEvent[] | undefined,
-): string | null {
-  if (events === undefined) return null
+): { text: string | null; tooLong: boolean } {
+  if (events === undefined) return { text: null, tooLong: false }
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event?.type !== 'user/message') continue
@@ -166,7 +174,7 @@ export function latestUserMessageText(
     const source = (message as { source?: { kind?: string } }).source
     if (source?.kind !== 'user') continue
     const content = (message as { content?: unknown }).content
-    if (!Array.isArray(content)) return null
+    if (!Array.isArray(content)) return { text: null, tooLong: false }
     let text = ''
     let sawText = false
     for (const block of content) {
@@ -174,13 +182,15 @@ export function latestUserMessageText(
       const typed = block as { type?: unknown; text?: unknown }
       if (typed.type !== 'text' || typeof typed.text !== 'string') continue
       const part = `${sawText ? '\n' : ''}${typed.text}`
-      if (text.length + part.length > LATEST_USER_MESSAGE_MAX_CHARS) return null
+      if (text.length + part.length > LATEST_USER_MESSAGE_MAX_CHARS) {
+        return { text: null, tooLong: true }
+      }
       text += part
       sawText = true
     }
-    return sawText ? text : null
+    return { text: sawText ? text : null, tooLong: false }
   }
-  return null
+  return { text: null, tooLong: false }
 }
 
 // ─── Session memory ─────────────────────────────────────────────────────────
@@ -575,13 +585,20 @@ export function createSmartShellEvaluator(options: {
     if (selection === undefined) return { kind: 'ask', detail: 'no-default-model' }
 
     const events = sessionEventsFor(session)
+    const userMessage = latestUserMessageText(events)
+    // TooLong guard: when the newest genuine user message exceeds the
+    // 2000-char budget we route to manual review rather than feed the
+    // classifier a truncated trusted context. Position mirrors
+    // `dsh-auto-approve`: AFTER session memory (so a remembered grant
+    // still wins) and BEFORE the LLM call (so we never invoke it).
+    if (userMessage.tooLong) return { kind: 'ask', detail: 'latest-user-message-too-long' }
     const evidence: ClassifierEvidence = {
       toolName: exec.name,
       command: command ?? null,
       toolArguments: toolArgumentsString ?? null,
       justification: reasonForExec?.(exec.name) ?? null,
       workspacePath: session.header?.cwd ?? null,
-      latestUserMessage: latestUserMessageText(events),
+      latestUserMessage: userMessage.text,
     }
 
     // Touch command summary so the linter doesn't drop the import. The

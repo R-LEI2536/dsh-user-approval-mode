@@ -378,6 +378,7 @@ Deployer-only (not shown in the page; set in `cordis.yml`):
 - `default` — mode assigned to new sessions
 - `unclassified` — `'ask'` / `'allow'` strategy for tools not in any family
 - `smartExtraDangerPatterns` — append-only regex patterns the smart classifier checks before the LLM call
+- `smartDangerPatterns` — replace the built-in 13 danger patterns entirely (`null` keeps built-ins; non-null array replaces them); deployer-only via cordis, not exposed in the settings page
 - `smartSessionMemory` — toggle the per-session `sha256(toolName + args)` memory (default `true`)
 - `smartSessionMemoryTtlMs` — TTL of a remembered approval in milliseconds (default `1_800_000` = 30 min)
 - `smartTimeoutMs` — hard timeout for one classifier LLM call in milliseconds (default `15_000`)

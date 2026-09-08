@@ -106,6 +106,8 @@ export interface Config {
   smartModel?: string | null
   /** 追加到内置 13 条危险清单之后的正则；命中直接转人工。 */
   smartExtraDangerPatterns?: string[]
+  /** 整组替换内置 13 条危险清单。`null`（默认）保留内置；非 null 数组完全替换。 */
+  smartDangerPatterns?: string[] | null
   /** 是否启用会话记忆（同 session 内同命令 TTL 内自动放行）。 */
   smartSessionMemory?: boolean
   /** 会话记忆 TTL（毫秒），默认 30 分钟。 */
@@ -151,6 +153,8 @@ export const Config: Schema<Config> = Schema.object({
     .description('LLM model id for the smart-mode shell classifier. Null inherits the host default-model selection.'),
   smartExtraDangerPatterns: Schema.array(Schema.string()).default([])
     .description('Append-only danger regex patterns the smart classifier checks before the LLM. Case-insensitive; compiled at startup.'),
+  smartDangerPatterns: Schema.union([Schema.array(Schema.string()), Schema.const(null)]).default(null)
+    .description('Replace the built-in 13 danger patterns entirely. Null (default) keeps the built-ins; a non-null array replaces them with the configured set. Use smartExtraDangerPatterns to APPEND without replacing. Deployer-only; not exposed in the settings page.'),
   smartSessionMemory: Schema.boolean().default(true)
     .description('Enable per-session memory that auto-approves a previously-classified-or-human-approved shell call within the TTL window.'),
   smartSessionMemoryTtlMs: Schema.number().step(1).min(1).max(2_147_483_647).default(1_800_000)
@@ -194,6 +198,7 @@ export function apply(ctx: Context, config: Config): void {
     smartProvider: config.smartProvider ?? null,
     smartModel: config.smartModel ?? null,
     smartExtraDangerPatterns: config.smartExtraDangerPatterns ?? [],
+    smartDangerPatterns: config.smartDangerPatterns ?? null,
     smartSessionMemory: config.smartSessionMemory ?? true,
     smartSessionMemoryTtlMs: config.smartSessionMemoryTtlMs ?? 1_800_000,
     smartTimeoutMs: config.smartTimeoutMs ?? 15_000,
@@ -237,6 +242,20 @@ export function apply(ctx: Context, config: Config): void {
     return false // off / yolo：全放行
   }
 
+  // Logger helper for smart-mode decisions. Wrapped in try/catch because a
+  // broken logger must never change an approval outcome (mirrors the
+  // safety posture of `dsh-auto-approve`'s `logDecision`). The plugin tag
+  // and `ask|allow` vocabulary match the gate's public decision kinds so
+  // deployers can grep the dsh log for every prompt the smart classifier
+  // produced.
+  const logSmartDecision = (decision: 'ask' | 'allow', detail: string): void => {
+    try {
+      ctx.logger.info(`[dsh-user-approval[smart]] decision=${decision} ${detail}`)
+    } catch {
+      // Swallow logger failures; the decision has already been computed.
+    }
+  }
+
   // ── Smart-mode evaluator lifecycle ────────────────────────────────────────
   // The classifier is only useful when smart mode is in play, but the
   // evaluator state (compiled patterns, session memory, AbortController)
@@ -251,6 +270,7 @@ export function apply(ctx: Context, config: Config): void {
     const cfg = cfgThunk()
     const smartCfg: SmartEvaluatorConfig = {
       smartExtraDangerPatterns: cfg.smartExtraDangerPatterns ?? [],
+      smartDangerPatterns: cfg.smartDangerPatterns ?? null,
       smartSessionMemory: cfg.smartSessionMemory ?? true,
       smartSessionMemoryTtlMs: cfg.smartSessionMemoryTtlMs ?? 1_800_000,
       smartTimeoutMs: cfg.smartTimeoutMs ?? 15_000,
@@ -258,7 +278,7 @@ export function apply(ctx: Context, config: Config): void {
       smartProvider: cfg.smartProvider ?? null,
       smartModel: cfg.smartModel ?? null,
     }
-    const patterns = compileSmartDangerPatterns(smartCfg.smartExtraDangerPatterns)
+    const patterns = compileSmartDangerPatterns(smartCfg.smartDangerPatterns, smartCfg.smartExtraDangerPatterns)
     // Cast to our narrower `SmartLlmService` — the host's LlmRuntime.stream
     // signature is structurally compatible, but TypeScript's `messages` is
     // mutable there and `readonly` here. We never mutate downstream.
@@ -314,6 +334,7 @@ export function apply(ctx: Context, config: Config): void {
           compositionDefaultSandbox as SandboxMode | undefined,
         )
         if (isSandboxEscalation(escalation.requested, effective)) {
+          logSmartDecision('ask', `detail=sandbox-escalation ${effective}->${escalation.requested}`)
           return {
             kind: 'ask',
             reason: `sandbox 升级 ${effective} → ${escalation.requested}，需用户确认（${escalation.justification}）`,
@@ -321,7 +342,11 @@ export function apply(ctx: Context, config: Config): void {
         }
       }
       const verdict = await smartEvaluator(exec, agent.session)
-      if (verdict.kind === 'allow') return { kind: 'allow' }
+      if (verdict.kind === 'allow') {
+        logSmartDecision('allow', `detail=${verdict.source}`)
+        return { kind: 'allow' }
+      }
+      logSmartDecision('ask', `detail=${verdict.detail}`)
       return {
         kind: 'ask',
         reason: (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
