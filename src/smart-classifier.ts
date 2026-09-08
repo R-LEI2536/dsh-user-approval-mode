@@ -268,15 +268,20 @@ export function createSmartSessionMemory(ttlMs: number): SmartSessionMemory {
   })
 }
 
-/** Key for "the same shell call again": tool name + lossless arguments. */
+/** Key for "the same shell call again": tool name + the extracted command.
+ *
+ * Earlier versions hashed the entire `args` JSON blob, which made the key
+ * diverge whenever the tool wrapper attached call-specific metadata
+ * (description, callId, timestamp, …) that the agent or user did not write
+ * into the shell command itself. Two semantically-identical shell calls
+ * therefore missed the session-memory cache. The reference implementation
+ * (`ref_codes/dsh-auto-approve-main/index.js`) avoids this by reading the
+ * canonical `tool/call` event from the session log via `callId`; we do
+ * not have that hook here, so we key on the extracted command string
+ * (the same projection used to build classifier evidence). */
 export function smartMemoryKey(toolName: string, args: unknown): string {
-  let serialized: string
-  try {
-    serialized = JSON.stringify(args) ?? String(args)
-  } catch {
-    serialized = String(args)
-  }
-  return createHash('sha256').update(`${toolName}\n${serialized}`).digest('hex')
+  const content = commandFromArguments(args) ?? String(args)
+  return createHash('sha256').update(`${toolName}\n${content}`).digest('hex')
 }
 
 // ─── Streaming aggregator ───────────────────────────────────────────────────

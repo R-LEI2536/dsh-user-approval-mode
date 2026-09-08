@@ -69,6 +69,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sandboxDefaults` to `read-only`).
 - New helper module `src/permission-presets-helper.ts` and 8-case test
   `test/permission-presets-helper.test.ts` cover the preset-pick logic.
+- **Session-memory cache keyed on the shell command, not the wrapper
+  blob** — `smartMemoryKey` previously hashed the entire `args` JSON,
+  so any tool-wrapper metadata (agent-supplied `description`, DSH-injected
+  fields, `cwd`, …) made the cache miss for what was semantically the
+  same shell call. Live-verified: two `echo hello` calls with different
+  `description` values both reached `decision=allow detail=classifier`
+  on the first invocation but never hit `detail=remembered` on the
+  repeat — the memory write succeeded, the lookup key just never matched.
+  Now keys on `args.command` (the same projection used to build
+  classifier evidence), so `remembered` lookups succeed on identical
+  commands. Mirrors the events-based lookup in
+  `ref_codes/dsh-auto-approve-main/index.js`, which sees only the
+  canonical `tool/call` arguments and not the wrapper extras.
 
 ## [0.4.0] - 2026-09-08
 

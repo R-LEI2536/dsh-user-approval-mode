@@ -96,8 +96,15 @@ test('smartMemoryKey: stable across invocations and argument-shape-tolerant', ()
   assert.equal(a, b, 'same tool + args must hash identically')
   const c = smartMemoryKey('bash', { command: 'ls -l' })
   assert.notEqual(a, c, 'different command must hash differently')
+  // Extra non-command args (e.g. `cwd`, agent-supplied `description`,
+  // DSH-injected metadata) MUST NOT change the key — the cache is
+  // keyed on the shell command itself, not on the wrapper blob.
+  // Mirrors `dsh-auto-approve`'s events-based lookup, which sees only
+  // the canonical `tool/call` arguments, not the wrapper extras.
   const d = smartMemoryKey('bash', { command: 'ls -la', cwd: '/tmp' })
-  assert.notEqual(a, d, 'extra arg changes the key')
+  assert.equal(a, d, 'extra non-command arg must not change the key')
+  const e = smartMemoryKey('bash', { command: 'ls -la', description: 'agent-supplied annotation' })
+  assert.equal(a, e, 'tool-wrapper metadata must not change the key')
 })
 
 test('smartMemoryKey: falls back to stringification when JSON.stringify throws', () => {
