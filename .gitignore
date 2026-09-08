@@ -2,6 +2,11 @@
 lib/
 *.tsbuildinfo
 
+# Environment / secrets — never commit
+.env
+.env.*
+!.env.example
+
 # Dependencies
 node_modules/
 # pnpm content-addressable store (paired with node_modules/.pnpm/)
