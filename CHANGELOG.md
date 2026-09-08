@@ -5,84 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-
-- **`smartDangerPatterns` deployer-only field** — `string[] | null` (default
-  `null`). When non-null, REPLACES the built-in 13 danger patterns entirely
-  before `smartExtraDangerPatterns` is appended on top. Mirrors the
-  `dangerPatterns` switch on `dsh-auto-approve`. Cordis-only; not exposed in
-  the settings page. Deployment example:
-
-  ```yaml
-  - id: dsh-user-approval-mode
-    config:
-      smartDangerPatterns:
-        - '\bkubectl\s+delete\b'
-        - '\bdsh\s+plugin\s+add\b'
-      smartExtraDangerPatterns: []
-  ```
-
-- **Smart-gate decision logger** — every smart-mode shell verdict now
-  emits one line via `ctx.logger.info`, format
-  `[dsh-user-approval[smart]] decision=<ask|allow> <detail>`. Logger
-  failures are swallowed so a broken logger never changes an approval
-  outcome. The vocabulary matches the gate's public `ask|allow` kinds
-  so deployers can `grep "decision=ask"` to surface every classifier
-  escalation.
-
-### Changed
-
-- **`latestUserMessage` overflow short-circuits in smart mode** — when the
-  newest genuine user message exceeds the 2000-character budget, the
-  classifier pipeline now skips the LLM call and routes directly to
-  manual review with `detail=latest-user-message-too-long`. The guard sits
-  AFTER the session-memory lookup (so a remembered grant still wins)
-  and BEFORE the LLM call (so we never invoke the model on truncated
-  trusted context). Mirrors `dsh-auto-approve`'s posture exactly.
-
-### Fixed
-
-- **Documentation claimed a `'human'` source memory path that was never
-  wired** — `CONTEXT.md` (`Smart session memory` section) and the
-  `smartSessionMemory` schema description both stated entries could be
-  written when "the human granting an escalated ask", but the smart gate
-  sits at `tools/pre-execute` and never observes the downstream approval
-  dialog outcome. The `'human'` source type stays in the memory API
-  surface as a reserved slot, but no code path writes it today. Both
-  spots now describe the classifier-only reality; a future DSH event
-  could backfill the human source without API churn.
-- **Sandbox reset leaves orphan `custom` preset state** — when a user
-  manually picked a non-workspace-write permission preset (e.g.
-  `danger-full-access`) and then ran `/approval-mode <mode>`, the
-  plugin wrote `sandbox/mode: workspace-write` but left the prior
-  `approval/policy: never` in place. The resulting
-  `workspace-write + never` combination matches no preset, so
-  `dsh-permission-presets`' UI chip rendered `custom`. The fix
-  delegates the sandbox-mode change to `permissionPresets.set()`
-  when a preset matching `(sandbox, ask)` exists, restoring the named
-  preset in one shot. The `off` mode keeps the direct `sandbox/mode`
-  write (no preset bundle — off is "I don't care about presets"). Falls
-  back to direct `sandbox/mode` write when `permission-presets` isn't
-  mounted or no preset matches (e.g. deployer customized
-  `sandboxDefaults` to `read-only`).
-- New helper module `src/permission-presets-helper.ts` and 8-case test
-  `test/permission-presets-helper.test.ts` cover the preset-pick logic.
-- **Session-memory cache keyed on the shell command, not the wrapper
-  blob** — `smartMemoryKey` previously hashed the entire `args` JSON,
-  so any tool-wrapper metadata (agent-supplied `description`, DSH-injected
-  fields, `cwd`, …) made the cache miss for what was semantically the
-  same shell call. Live-verified: two `echo hello` calls with different
-  `description` values both reached `decision=allow detail=classifier`
-  on the first invocation but never hit `detail=remembered` on the
-  repeat — the memory write succeeded, the lookup key just never matched.
-  Now keys on `args.command` (the same projection used to build
-  classifier evidence), so `remembered` lookups succeed on identical
-  commands. Mirrors the events-based lookup in
-  `ref_codes/dsh-auto-approve-main/index.js`, which sees only the
-  canonical `tool/call` arguments and not the wrapper extras.
-
 ## [0.4.0] - 2026-09-08
 
 ### Added
@@ -123,6 +45,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ADR-0002** — `docs/adr/0002-smart-mode-shell-classifier.md` records
   the pipeline design, the deployer/user field split, and the verbatim
   port from `dsh-auto-approve`.
+- **`smartDangerPatterns` deployer-only field** — `string[] | null` (default
+  `null`). When non-null, REPLACES the built-in 13 danger patterns entirely
+  before `smartExtraDangerPatterns` is appended on top. Mirrors the
+  `dangerPatterns` switch on `dsh-auto-approve`. Cordis-only; not exposed in
+  the settings page. Deployment example:
+
+  ```yaml
+  - id: dsh-user-approval-mode
+    config:
+      smartDangerPatterns:
+        - '\bkubectl\s+delete\b'
+        - '\bdsh\s+plugin\s+add\b'
+      smartExtraDangerPatterns: []
+  ```
+- **Smart-gate decision logger** — every smart-mode shell verdict now
+  emits one line via `ctx.logger.info`, format
+  `[dsh-user-approval[smart]] decision=<ask|allow> <detail>`. Logger
+  failures are swallowed so a broken logger never changes an approval
+  outcome. The vocabulary matches the gate's public `ask|allow` kinds
+  so deployers can `grep "decision=ask"` to surface every classifier
+  escalation.
 
 ### Changed
 
@@ -136,6 +79,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dependencies** — added `tsx` devDep (loader for `node --test`) and
   `@types/node` (for `node:crypto` in `smart-classifier.ts`). No new
   peer / runtime deps.
+- **`latestUserMessage` overflow short-circuits in smart mode** — when the
+  newest genuine user message exceeds the 2000-character budget, the
+  classifier pipeline now skips the LLM call and routes directly to
+  manual review with `detail=latest-user-message-too-long`. The guard sits
+  AFTER the session-memory lookup (so a remembered grant still wins)
+  and BEFORE the LLM call (so we never invoke the model on truncated
+  trusted context). Mirrors `dsh-auto-approve`'s posture exactly.
+
+### Fixed
+
+- **Documentation claimed a `'human'` source memory path that was never
+  wired** — `CONTEXT.md` (`Smart session memory` section) and the
+  `smartSessionMemory` schema description both stated entries could be
+  written when "the human granting an escalated ask", but the smart gate
+  sits at `tools/pre-execute` and never observes the downstream approval
+  dialog outcome. The `'human'` source type stays in the memory API
+  surface as a reserved slot, but no code path writes it today. Both
+  spots now describe the classifier-only reality; a future DSH event
+  could backfill the human source without API churn.
+- **Sandbox reset leaves orphan `custom` preset state** — when a user
+  manually picked a non-workspace-write permission preset (e.g.
+  `danger-full-access`) and then ran `/approval-mode <mode>`, the
+  plugin wrote `sandbox/mode: workspace-write` but left the prior
+  `approval/policy: never` in place. The resulting
+  `workspace-write + never` combination matches no preset, so
+  `dsh-permission-presets`' UI chip rendered `custom`. The fix
+  delegates the sandbox-mode change to `permissionPresets.set()`
+  when a preset matching `(sandbox, ask)` exists, restoring the named
+  preset in one shot. The `off` mode keeps the direct `sandbox/mode`
+  write (no preset bundle — off is "I don't care about presets"). Falls
+  back to direct `sandbox/mode` write when `permission-presets` isn't
+  mounted or no preset matches (e.g. deployer customized
+  `sandboxDefaults` to `read-only`).
+  - New helper module `src/permission-presets-helper.ts` and 8-case test
+    `test/permission-presets-helper.test.ts` cover the preset-pick logic.
+- **Session-memory cache keyed on the shell command, not the wrapper
+  blob** — `smartMemoryKey` previously hashed the entire `args` JSON,
+  so any tool-wrapper metadata (agent-supplied `description`, DSH-injected
+  fields, `cwd`, …) made the cache miss for what was semantically the
+  same shell call. Live-verified: two `echo hello` calls with different
+  `description` values both reached `decision=allow detail=classifier`
+  on the first invocation but never hit `detail=remembered` on the
+  repeat — the memory write succeeded, the lookup key just never matched.
+  Now keys on `args.command` (the same projection used to build
+  classifier evidence), so `remembered` lookups succeed on identical
+  commands. Mirrors the events-based lookup in
+  `ref_codes/dsh-auto-approve-main/index.js`, which sees only the
+  canonical `tool/call` arguments and not the wrapper extras.
 
 ### Documentation
 
