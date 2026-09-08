@@ -13,6 +13,8 @@ tutorial/
 # Development notes (not for users)
 local-docs/
 ref_codes/
+# ReMe local memory store (runtime cache, per-machine)
+.reme/
 
 # IDE
 .vscode/
