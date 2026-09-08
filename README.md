@@ -1,12 +1,12 @@
 # dsh-user-approval-mode
 
-**Version 0.2.0**
+**Version 0.4.0**
 
 [中文](./README.zh.md)
 
-User approval modes plugin for DeepSeek Harness. Provides four approval modes to control when tools require user confirmation before execution.
+User approval modes plugin for DeepSeek Harness. Provides five approval modes to control when tools require user confirmation before execution.
 
-用户审批模式插件，为 DeepSeek Harness 提供四种审批模式，控制工具执行前是否需要用户确认。
+用户审批模式插件，为 DeepSeek Harness 提供五种审批模式，控制工具执行前是否需要用户确认。
 
 ## Changelog
 
@@ -19,9 +19,10 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 
 ## Features
 
-- **Four Approval Modes**: `request`, `auto-edit`, `yolo`, `off`
+- **Five Approval Modes**: `request`, `auto-edit`, `smart` (NEW), `yolo`, `off`
 - **Web UI Mode Selector**: Quick-switch chip under the input box for changing approval modes without commands
-- **Settings Page**: Configure six approval-mode options (tool family lists, per-mode sandbox policy, approval prompt template) in `Settings → Approval Modes`. The default mode and the unclassified strategy remain deployer-only (set in `cordis.yml`).
+- **Settings Page**: Configure approval-mode options (tool family lists, per-mode sandbox policy, approval prompt template, and smart-classifier provider/model) in `Settings → Approval Modes`. The default mode, the unclassified strategy, and most smart-mode internals remain deployer-only (set in `cordis.yml`).
+- **Smart-mode shell classifier**: A four-step pipeline (danger list → session memory → LLM classifier → fail-safe) auto-approves routine shell commands while keeping dangerous or unclear ones in front of the user.
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
@@ -36,6 +37,7 @@ The approval modes are inspired by [Qwen Code](https://github.com/QwenLM/Qwen-Co
 |------|-----------|-------------|-------------|----------------|----------|
 | `request` | Ask | Ask | Ask | Allow | Maximum security, all modifications require approval |
 | `auto-edit` | Allow | Ask | Ask | Allow | Balanced, automatic file editing with shell oversight |
+| `smart` | Allow | Classifier (4-step pipeline) | Ask | Allow | Auto-approve routine shell; dangerous or unclear shell still asks |
 | `yolo` | Allow | Allow | Allow | Allow | No approval needed, full automation |
 | `off` | Allow | Allow | Allow | Allow | Disabled, restore default DSH behavior |
 
@@ -50,6 +52,12 @@ The approval modes are inspired by [Qwen Code](https://github.com/QwenLM/Qwen-Co
 - **Behavior**: Edit tools auto-approve, shell and unclassified tools require approval
 - **Sandbox**: Automatically switches to `workspace-write`
 - **Use Case**: Development environments where file modifications are trusted but shell commands need oversight
+
+#### `smart` - Shell Classifier (NEW)
+- **Behavior**: Edit tools auto-approve; shell tools go through the 4-step pipeline (danger list → session memory → LLM classifier → fail-safe); unclassified tools still require approval; read-only exempt. Approved calls are remembered per session for `smartSessionMemoryTtlMs` (default 30 min).
+- **Sandbox**: Automatically switches to `workspace-write`
+- **Use Case**: Long-running setup loops where most shell commands are routine and approvals interrupt flow. Dangerous or unclear commands still surface to the user; the danger list is a hard floor that runs before any LLM call.
+- **Risks**: The LLM may misclassify. The danger list cannot enumerate every destructive pattern. Plugin reload aborts in-flight classifications via `AbortController`. See "Smart Mode Risks" under Known Limitations.
 
 #### `yolo` - Full Automation
 - **Behavior**: No approval required for any tool
@@ -178,6 +186,7 @@ Use the `/approval-mode` command in the DSH Web GUI:
 /approval-mode              # Show current mode
 /approval-mode request      # Switch to request mode
 /approval-mode auto-edit    # Switch to auto-edit mode
+/approval-mode smart        # Switch to smart mode (LLM shell classifier)
 /approval-mode yolo         # Switch to yolo mode
 /approval-mode off          # Disable (restore default)
 ```
@@ -220,6 +229,45 @@ renders `conversation.input.plan` inside its "modes" cluster, before the
 re-rendering the entire plan control, and relocating it would require a
 platform-level change to `ui-conversation`, which this plugin deliberately
 avoids. Accepted as-is.
+
+### Smart Mode Risks
+
+Smart mode adds an LLM-driven auto-approval step on top of the existing
+manual-approval modes. The classifier is a *best-effort* accelerator, not
+a security boundary. Concretely:
+
+- **LLM misclassification is possible.** The classifier can misread a
+  dangerous command as routine and let it through. The 13-pattern danger
+  list runs first as a hard floor (`rm -rf /`, `mkfs`, `curl|sh`, fork
+  bomb, …) but cannot enumerate every destructive pattern. Use `smart`
+  only on environments where the worst-case mistake is recoverable.
+- **No user-visible "why was this approved?" affordance.** When the
+  classifier approves, the user sees no prompt and no log line. The
+  per-tool evidence (`toolName`, `command`, `arguments`, `workspacePath`,
+  `latestUserMessage`) lives only in the LLM call's request payload.
+- **Leftover approvals live in process memory.** The session memory is
+  an in-memory `Map` keyed by `sha256(toolName + rawArguments)`; DSH
+  restart clears it. Restarting the harness forces the first call of
+  every shell command to re-pay the LLM cost.
+- **Cost is per unique shell call.** Untouched mode means each unique
+  shell command costs one LLM call; repeats within the TTL are free.
+  If the user left `smartProvider`/`smartModel` blank and the host
+  defaults to the conversation's main model, those calls run on the
+  same model as the conversation — pick a lighter model to reduce cost.
+- **Concurrency is bounded by `smartSessionMemory`.** The memory is
+  per-session and FIFO at 200 entries; a long session will cycle out
+  older approvals and re-pay the LLM cost for them.
+- **Plugin reload drains in-flight classifications.** The plugin owns an
+  `AbortController` whose signal threads into every active LLM call; on
+  unload, all in-flight classifications are aborted and awaited via
+  `Promise.allSettled` before the new plugin instance starts serving
+  requests. A stalled request cannot survive a reload and pollute
+  downstream decisions.
+- **Both seams optional → ask fallback.** When `ctx.llm` or
+  `ctx.agentDefaultModel` is absent on the host, every shell call in
+  smart mode falls back to ask (`detail: 'llm-unavailable'` or
+  `'no-default-model'`). The classifier never silently allows anything
+  outside the danger-list + classifier-approve path.
 
 ## Customizing the Approval Prompt Text
 
@@ -310,11 +358,18 @@ the user override (so the deployer's base re-emerges).
 | `autoAllowTools` | comma-separated text (set) | Bypass approval regardless of family |
 | `sandboxDefaults` | per-mode dropdown | Sandbox policy when switching into each mode |
 | `askReason` | textarea | Approval dialog template (placeholders: `{tool}` / `{mode}` / `{family}`) |
+| `smartProvider` | text | LLM provider route for the smart classifier (leave empty to inherit host default) |
+| `smartModel` | text | LLM model id for the smart classifier (leave empty to inherit host default) |
 
 Deployer-only (not shown in the page; set in `cordis.yml`):
 
 - `default` — mode assigned to new sessions
 - `unclassified` — `'ask'` / `'allow'` strategy for tools not in any family
+- `smartExtraDangerPatterns` — append-only regex patterns the smart classifier checks before the LLM call
+- `smartSessionMemory` — toggle the per-session `sha256(toolName + args)` memory (default `true`)
+- `smartSessionMemoryTtlMs` — TTL of a remembered approval in milliseconds (default `1_800_000` = 30 min)
+- `smartTimeoutMs` — hard timeout for one classifier LLM call in milliseconds (default `15_000`)
+- `smartClassifierPrompt` — system prompt override; defaults to `DEFAULT_SMART_CLASSIFIER_PROMPT`
 
 ### Effect timing
 
@@ -392,14 +447,16 @@ You can customize the plugin behavior in your agent preset:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `default` | string | `off` | Default approval mode for new sessions. Options: `request`, `auto-edit`, `yolo`, `off` |
+| `default` | string | `off` | Default approval mode for new sessions. Options: `request`, `auto-edit`, `smart`, `yolo`, `off` |
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor']` | Tools classified as "edit" family (file modifications) |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | Tools classified as "shell" family (command execution) |
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']` | Tools classified as "readonly" family (always allowed) |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode']` | Tools that always bypass approval |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
-| `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
+| `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
 | `askReason` | string | *see default* | Custom message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders |
+| `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`) |
+| `smartModel` | string \| null | `null` | LLM model for the smart-mode classifier (null = inherit `agentDefaultModel`) |
 
 ### Default Ask Reason
 

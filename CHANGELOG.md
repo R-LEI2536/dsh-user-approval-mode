@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-08
+
+### Added
+
+- **Smart mode** — a fifth approval mode that routes shell-family tool calls
+  through a four-step classifier pipeline (danger list → session memory →
+  LLM classifier → fail-safe) instead of always asking. Dangerous commands
+  are forwarded to human review via the danger list; routine ones are
+  auto-approved by the LLM and remembered for the session's TTL window;
+  every unexpected outcome (timeout, protocol error, missing seam,
+  non-`approve` verdict) falls back to manual review. Edit / readonly /
+  `other` families are unchanged, so smart mode is functionally
+  `auto-edit` with a shell upgrade.
+- **Smart classifier pipeline** — `src/smart-classifier.ts` plus the
+  verbatim-ported `src/smart-danger-patterns.ts` (13 built-in regex
+  sources) and `src/smart-prompt.ts` (the safety contract prompt). The
+  classifier integrates at `tools/pre-execute` and reads
+  `exec.arguments` directly (no session-events lookup needed for this
+  plugin's waterfall).
+- **Settings page: Smart classifier sub-section** — new sub-section for
+  two user-editable fields (`smartProvider`, `smartModel`) plus a new
+  dropdown in the existing Sandbox sub-section for `sandboxDefaults.smart`.
+  Five other smart fields (`smartExtraDangerPatterns`,
+  `smartSessionMemory`, `smartSessionMemoryTtlMs`, `smartTimeoutMs`,
+  `smartClassifierPrompt`) stay deployer-only in `cordis.yml`.
+- **cordis.patch.yml** declares `sandboxDefaults.smart: workspace-write`
+  by default; the other five smart fields are omitted so deployers
+  inherit schema defaults.
+- **Plugin lifetime signal** — `ctx.effect()` registers an
+  `AbortController` whose signal threads into every in-flight LLM
+  classification. Plugin reload aborts pending calls and awaits them
+  via `Promise.allSettled` before tearing down.
+- **Unit tests** — `test/` directory with five `node --test` files
+  (`tsx` loader, no extra peer deps). 47 tests cover the danger
+  patterns, classifier verdict parsing, streaming aggregator, session
+  memory, and the full smart-shell evaluator with a mocked LLM seam.
+  Run with `pnpm test`.
+- **ADR-0002** — `docs/adr/0002-smart-mode-shell-classifier.md` records
+  the pipeline design, the deployer/user field split, and the verbatim
+  port from `dsh-auto-approve`.
+
+### Changed
+
+- **Approval modes: four → five.** `ApprovalMode` and `APPROVAL_MODES`
+  gain `'smart'` between `'auto-edit'` and `'yolo'`. The settings page,
+  the chip menu, and the `/approval-mode` slash command all pick up the
+  new value automatically.
+- **`sandboxDefaults` key set widens** from `'request' | 'auto-edit' | 'yolo'`
+  to `'request' | 'auto-edit' | 'smart' | 'yolo'`. Off-mode still
+  restores the composition default.
+- **Dependencies** — added `tsx` devDep (loader for `node --test`) and
+  `@types/node` (for `node:crypto` in `smart-classifier.ts`). No new
+  peer / runtime deps.
+
+### Documentation
+
+- `CONTEXT.md` adds glossary entries for **Smart mode**, **Smart
+  classifier pipeline**, **Danger list**, **Smart session memory**,
+  **Smart classifier prompt**, **Smart LLM seam**, **Smart lifetime
+  signal**. The Settings namespace entry is updated to enumerate the
+  new user-editable and deployer-only fields.
+- `README.md` adds the Smart mode row to the Approval Modes table, the
+  new "Smart Mode (NEW)" detail section, the three new user-editable
+  fields in the Configuration table, and a "Smart Mode Risks"
+  subsection under Known Limitations.
+- New `pnpm test` script; existing `pnpm build` script unchanged.
+
 ## [0.3.2] - 2026-09-03
 
 ### Changed
