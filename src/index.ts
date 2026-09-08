@@ -49,6 +49,11 @@ import {
   findAskPresetForSandbox,
   type PermissionPresetsServiceLike,
 } from './permission-presets-helper.js'
+import {
+  getSandboxEscalation,
+  currentSandboxFor,
+  isSandboxEscalation,
+} from './sandbox-escalation.js'
 
 // 扩展 Context 类型声明（仅声明 shell，因为 sandboxPolicy 和 sessions 已在其他包中声明）
 declare module '@deepseek-ai/cordis' {
@@ -298,9 +303,23 @@ export function apply(ctx: Context, config: Config): void {
     const family = familyOf(exec.name)
     if (family === 'readonly') return decision
 
-    // Smart 模式 + shell 族：4 步裁决流水线（危险清单 → 会话记忆 →
-    // LLM 分类器 → fail-safe）。allow → 直通；ask → 转人工走 cfg.askReason。
+    // Smart 模式 + shell 族：先做提权拦截，再走 4 步裁决流水线（危险清单
+    // → 会话记忆 → LLM 分类器 → fail-safe）。提权强制 ask，分类器
+    // 永远不会代决 sandbox 升级——即使下游 preset 配成 auto-allow。
     if (mode === 'smart' && family === 'shell') {
+      const escalation = getSandboxEscalation(exec.arguments)
+      if (escalation !== undefined) {
+        const effective = currentSandboxFor(
+          sandboxPolicy?.overrideOf(agent.session),
+          compositionDefaultSandbox as SandboxMode | undefined,
+        )
+        if (isSandboxEscalation(escalation.requested, effective)) {
+          return {
+            kind: 'ask',
+            reason: `sandbox 升级 ${effective} → ${escalation.requested}，需用户确认（${escalation.justification}）`,
+          }
+        }
+      }
       const verdict = await smartEvaluator(exec, agent.session)
       if (verdict.kind === 'allow') return { kind: 'allow' }
       return {
