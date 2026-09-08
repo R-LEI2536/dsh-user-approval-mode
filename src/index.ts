@@ -334,13 +334,18 @@ export function apply(ctx: Context, config: Config): void {
   // For non-off modes we delegate the bundle write to permission-presets
   // when a matching preset exists; the off mode keeps direct sandbox
   // writes (no preset bundle — off is "I don't care about presets").
-  const permissionPresets = ctx.get('permissionPresets') as PermissionPresetsServiceLike | undefined
-
+  //
+  // The service handle is resolved LAZILY at every applyMode call,
+  // not captured at apply() time: cordis does not guarantee that
+  // dsh-permission-presets has finished mounting before our plugin's
+  // `apply()` runs, and a top-level `ctx.get()` would freeze `undefined`
+  // for the rest of this plugin's lifetime.
   const applyModeSandboxChange = (session: Session, mode: ApprovalMode, sandbox: SandboxMode): void => {
     if (mode === 'off') {
       setSandboxMode(session, sandbox)
       return
     }
+    const permissionPresets = ctx.get('permissionPresets') as PermissionPresetsServiceLike | undefined
     const presetName = findAskPresetForSandbox(permissionPresets, sandbox)
     if (presetName !== undefined && permissionPresets !== undefined) {
       permissionPresets.set(session, presetName)
