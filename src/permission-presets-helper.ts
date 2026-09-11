@@ -3,26 +3,16 @@
  * preset bundle instead of leaving the session in the orphan `custom`
  * state when the user has manually picked a non-workspace-write preset.
  *
- * Only the structural subset of the service we actually use is typed;
- * the cast at the use site in `src/index.ts` calls into the real
- * `permissionPresets` (a sibling `@deepseek-ai/dsh-*` package) when
- * mounted, and the helper is a no-op when it isn't.
+ * 0.1.5 起 `PermissionPresetService` 由 `@deepseek-ai/dsh-permission-presets`
+ * 顶层导出（`packages/interaction/permission-presets/src/index.ts:162`），
+ * 这里直接消费正式类型，不再保留本地结构接口 —— 签名漂移会被 typecheck
+ * 捕获，运行时不再走 cast 兜底。
  */
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { PermissionPresetService } from '@deepseek-ai/dsh-permission-presets'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 
-/** Two-value approval policy enum shipped by `@deepseek-ai/dsh-user-approval`. */
-export type ApprovalPolicy = 'ask' | 'never'
-
-/** Minimal structural type for the `ctx.permissionPresets` service we use. */
-export interface PermissionPresetsServiceLike {
-  readonly names: readonly string[]
-  resolve(name: string): { sandbox: SandboxMode; approval: ApprovalPolicy }
-  set(session: Session, name: string): void
-}
-
-/** Preset match used by `applyMode`: `workspace-write + ask` and friends. */
-export const ASK_PRESET_APPROVAL: ApprovalPolicy = 'ask'
+/** Approval policy value this helper expects to pair with each preset. */
+const ASK_PRESET_APPROVAL = 'ask'
 
 /**
  * Pick the preset whose bundle matches `(targetSandbox, 'ask')`. The
@@ -38,13 +28,13 @@ export const ASK_PRESET_APPROVAL: ApprovalPolicy = 'ask'
  * `'read-only'`); the caller falls back to writing `sandbox/mode`
  * directly, and the UI is responsible for showing the orphan state.
  *
- * @param service - the structural handle on `ctx.permissionPresets`, or
+ * @param service - the formal handle on `ctx.permissionPresets`, or
  *   undefined when the host didn't mount `dsh-permission-presets`.
  * @param targetSandbox - the sandbox the approval mode wants.
  * @returns the preset name, or undefined when nothing matches.
  */
 export function findAskPresetForSandbox(
-  service: PermissionPresetsServiceLike | undefined,
+  service: PermissionPresetService | undefined,
   targetSandbox: SandboxMode,
 ): string | undefined {
   if (service === undefined) return undefined

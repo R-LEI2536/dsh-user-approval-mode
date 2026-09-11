@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-11
+
+### Changed
+
+- **Adapt to DSH 0.1.5-rc.1** — bump every `@deepseek-ai/dsh-*`
+  peer/devDep range from `>=0.1.2-rc.1` to `^0.1.5-rc.1`. Add
+  `@deepseek-ai/dsh-permission-presets@^0.1.5-rc.1` to peer and dev.
+  `pnpm install` auto-extends `pnpm-workspace.yaml`'s
+  `minimumReleaseAgeExclude` to cover the 0.1.5-rc.1 prerelease
+  packages so the new pnpm 11 release-age gate does not block the
+  install.
+
+- **Tighten two `as` casts in `src/index.ts` to formal DSH types** —
+  `sandboxPolicy` now imports `SandboxPolicyService` from
+  `@deepseek-ai/dsh-sandbox-policy`; `permissionPresets` now imports
+  `PermissionPresetService` from the new
+  `@deepseek-ai/dsh-permission-presets`. Both `ctx.get()` call sites
+  drop the structural cast; a future upstream signature drift will be
+  caught at `pnpm typecheck` rather than at runtime. Per
+  `DSH-0.1.5-UPGRADE-AUDIT.md` §3.4 and
+  `docs/2026-09-09-dsh-v0-1-5-alpha-1-compatibility-audit.md` §3.2.
+
+- **`src/permission-presets-helper.ts` re-shaped** — the helper now
+  consumes `PermissionPresetService` directly. The local
+  `PermissionPresetsServiceLike` interface and the `ApprovalPolicy`
+  re-export are removed (no remaining call sites). `findAskPresetForSandbox`'s
+  pure logic (loop, ASK_PRESET_APPROVAL match) is unchanged.
+
+### Test changes
+
+- **`test/permission-presets-helper.test.ts`** updated to mock the
+  real `PermissionPresetService` shape (structural stub plus
+  `as unknown as` cast at the boundary). All 80 tests still pass.
+
+### Notes for next upgrade
+
+- **Live verification deferred** — smart mode's six end-to-end
+  scenarios (echo / repeated echo / `rm -rf` / `curl|sh` /
+  `git push --force` / silent allow) need to run on a real DSH
+  0.1.5-rc.1 server. Out of scope for this release; tracked
+  separately.
+
+- **`@rh854lkjd/dsh-tool-list-dir@0.2.4` transitive peer warning** —
+  the package pulls `@deepseek-ai/dsh-fs@0.0.1-rc.1`, whose
+  `^0.0.1-rc.1` peer range no longer matches
+  `dsh-brand`/`dsh-invariants`/`dsh-llm`/`dsh-sandbox` at 0.1.5.
+  Pre-existing latent issue (also present at 0.1.2-rc.1 — only
+  surfaced now because `pnpm peers check` was new in the install).
+  `dsh-tool-list-dir` is recommended from `README` only and is not
+  `import`ed anywhere in `src/`; no functional impact. Tracked
+  upstream at `R-LEI2536/dsh-tool-list-dir`.
+
 ## [0.4.0] - 2026-09-08
 
 ### Added

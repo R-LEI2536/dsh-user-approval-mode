@@ -24,8 +24,10 @@
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import type { PermissionPresetService } from '@deepseek-ai/dsh-permission-presets'
 // DSH 0.1.2-alpha.3 起 `settingsNamespace()` 与 `installSettingsSection()` 不再作为
 // `@deepseek-ai/dsh-settings` 的顶层导出。namespace 改为编译期校验的字符串字面量
 // （`'approval-mode'` 直接满足 `^[a-z][a-z0-9-]*$`），注册入口收敛到 `SettingsProvider`
@@ -47,7 +49,6 @@ import {
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
 import {
   findAskPresetForSandbox,
-  type PermissionPresetsServiceLike,
 } from './permission-presets-helper.js'
 import {
   getSandboxEscalation,
@@ -212,10 +213,9 @@ export function apply(ctx: Context, config: Config): void {
   // `@deepseek-ai/dsh-sandbox-policy` 导出中移除（迁到 session-projection 单元）；
   // "session 最后一个 sandbox/mode" 现在走 `ctx.sandboxPolicy.overrideOf(session)`，
   // 语义等价：取该 session 日志里最后一个 `sandbox/mode` 事件，没有则 undefined。
-  // 断言只扩这两个字段，与本函数既有的 ctx.get() 风格保持一致。
-  const sandboxPolicy = ctx.get('sandboxPolicy') as
-    | { defaultMode?: SandboxMode; overrideOf: (session: Session) => SandboxMode | undefined }
-    | undefined
+  // 0.1.5 起 `SandboxPolicyService` 在 `@deepseek-ai/dsh-sandbox-policy` 顶层导出，
+  // 这里直接用正式类型，不再 `as` cast —— 签名漂移会在 typecheck 阶段被捕获。
+  const sandboxPolicy: SandboxPolicyService | undefined = ctx.get('sandboxPolicy')
   const shell = ctx.get('shell') as { sandboxMode?: string } | undefined
   const compositionDefaultSandbox = sandboxPolicy?.defaultMode ?? shell?.sandboxMode ?? 'workspace-write'
 
@@ -389,7 +389,10 @@ export function apply(ctx: Context, config: Config): void {
       setSandboxMode(session, sandbox)
       return
     }
-    const permissionPresets = ctx.get('permissionPresets') as PermissionPresetsServiceLike | undefined
+    // 0.1.5 起 `PermissionPresetService` 在 `@deepseek-ai/dsh-permission-presets`
+    // 顶层导出（`packages/interaction/permission-presets/src/index.ts:162`），
+    // 用正式类型替换本地结构接口；签名漂移会被 typecheck 捕获，运行时不再裸调。
+    const permissionPresets: PermissionPresetService | undefined = ctx.get('permissionPresets')
     const presetName = findAskPresetForSandbox(permissionPresets, sandbox)
     if (presetName !== undefined && permissionPresets !== undefined) {
       permissionPresets.set(session, presetName)

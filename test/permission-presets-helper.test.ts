@@ -13,29 +13,40 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { Session } from '@deepseek-ai/dsh-session'
-import {
-  findAskPresetForSandbox,
-  type PermissionPresetsServiceLike,
-} from '../src/permission-presets-helper.ts'
+import type { PermissionPresetService } from '@deepseek-ai/dsh-permission-presets'
+import { findAskPresetForSandbox } from '../src/permission-presets-helper.ts'
+
+/** The slice of `PermissionPresetService` the helper consumes — keeps the
+ *  test mock aligned with the real type without instantiating a full
+ *  cordis `Service` (which would need a context, registry, etc.). The
+ *  mock is structurally compatible but does not implement the full class;
+ *  callers `as`-cast it to `PermissionPresetService` at the boundary
+ *  because the test is verifying the consumer (helper) — not the service. */
 
 function makeService(
   presets: Record<string, { sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'; approval: 'ask' | 'never' }>,
-): PermissionPresetsServiceLike & { setCalls: Array<{ session: unknown; name: string }> } {
+): PermissionPresetService & { setCalls: Array<{ session: unknown; name: string }> } {
   const setCalls: Array<{ session: unknown; name: string }> = []
-  return {
+  // The mock implements only the structural subset the helper reads
+  // (`names`, `resolve`, `set`); the rest of the cordis Service surface
+  // is irrelevant here, since we are testing the consumer (helper), not the
+  // service. The double cast is honest: the test never instantiates a
+  // real PermissionPresetService.
+  const stub = {
     names: Object.keys(presets),
-    resolve(name) {
+    resolve(name: string) {
       const spec = presets[name]
       if (spec === undefined) {
         throw new Error(`test: preset ${name} not in table`)
       }
-      return spec
+      return spec as ReturnType<PermissionPresetService['resolve']>
     },
-    set(session, name) {
+    set(session: Session, name: string) {
       setCalls.push({ session, name })
     },
-    get setCalls() { return setCalls },
+    setCalls,
   }
+  return stub as unknown as PermissionPresetService & { setCalls: Array<{ session: unknown; name: string }> }
 }
 
 test('findAskPresetForSandbox: undefined service → undefined', () => {
@@ -100,7 +111,7 @@ test('findAskPresetForSandbox: empty preset table → undefined', () => {
   assert.equal(findAskPresetForSandbox(service, 'danger-full-access'), undefined)
 })
 
-test('findAskPresetForSandbox: integrate with PermissionPresetsServiceLike.set — set receives the chosen preset', () => {
+test('findAskPresetForSandbox: integrate with PermissionPresetService.set — set receives the chosen preset', () => {
   // The helper is consumed by `applyMode`, which then calls
   // `service.set(session, presetName)`. The mock here records every
   // set call so we can assert the integration contract: pick → call
