@@ -21,18 +21,18 @@
  * @module dsh-user-approval
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { PermissionPresetService } from '@deepseek-ai/dsh-permission-presets'
-// DSH 0.1.2-alpha.3 起 `settingsNamespace()` 与 `installSettingsSection()` 不再作为
-// `@deepseek-ai/dsh-settings` 的顶层导出。namespace 改为编译期校验的字符串字面量
-// （`'approval-mode'` 直接满足 `^[a-z][a-z0-9-]*$`），注册入口收敛到 `SettingsProvider`
-// 服务上的 `ctx.settings.installSection()`。`ctx.settings` 由 cordis 的 `declare module`
-// 推断，这里只保留 `import type {}` 占位以拉取相关类型增广。
+// DSH 0.1.7 起 `ctx.settings.installSection` 已删除：settings 迁入 profile 插件
+// Config —— 设置页可编辑的字段在 schema 上声明 `.volatile()`，值持久化到 profile
+// 的 `cordis.patch.yml` user 层并 live 生效；apply 内用 `settings.configure` 声明
+// 本插件的 settings 呈现。`ctx.settings` 由 cordis 的 `declare module` 推断，这里
+// 只保留 `import type {}` 占位以拉取相关类型增广。
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -119,22 +119,50 @@ export interface Config {
   smartClassifierPrompt?: string
 }
 
+/**
+ * 运行时 Config：8 个设置页可编辑字段包在 `Volatile<T>` 引用里（live，随 profile
+ * user 层更新），其余 8 个部署方-only 字段为启动时定值的普通值。类型镜像
+ * `Config` schema（含 `.volatile()` 链）的校验输出，apply 按此形状读配置。
+ */
+export interface VolatileConfig {
+  default: ApprovalMode
+  editTools: Volatile<string[]>
+  shellTools: Volatile<string[]>
+  readOnlyTools: Volatile<string[]>
+  autoAllowTools: Volatile<string[]>
+  unclassified: 'ask' | 'allow'
+  sandboxDefaults: Volatile<Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>>
+  askReason: Volatile<string>
+  smartProvider: Volatile<string | null>
+  smartModel: Volatile<string | null>
+  smartExtraDangerPatterns: string[]
+  smartDangerPatterns: string[] | null
+  smartSessionMemory: boolean
+  smartSessionMemoryTtlMs: number
+  smartTimeoutMs: number
+  smartClassifierPrompt: string
+}
+
 export const Config: Schema<Config> = Schema.object({
   default: Schema.union([...APPROVAL_MODES] as ApprovalMode[])
     .default('off')
     .description('The approval mode assigned to new sessions. Each session can still be switched at runtime via the composer chip.'),
   editTools: Schema.array(Schema.string())
     .default(['write', 'edit', 'str_replace_editor'])
-    .description('Tools classified as the "edit" family — file modifications. Auto-approved under auto-edit mode.'),
+    .description('Tools classified as the "edit" family — file modifications. Auto-approved under auto-edit mode.')
+    .volatile(),
   shellTools: Schema.array(Schema.string())
     .default(['bash', 'pwsh', 'tool:bash', 'tool:pwsh'])
-    .description('Tools classified as the "shell" family — command execution. Always require approval under request and auto-edit modes.'),
+    .description('Tools classified as the "shell" family — command execution. Always require approval under request and auto-edit modes.')
+    .volatile(),
   readOnlyTools: Schema.array(Schema.string())
     .default(['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'])
-    .description('Tools classified as the "read-only" family. Always allowed regardless of mode.'),
+    .description('Tools classified as the "read-only" family. Always allowed regardless of mode.')
+    .volatile(),
   autoAllowTools: Schema.array(Schema.string())
     .default(['ask_user_question', 'exit_plan_mode'])
-    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting).'),
+    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting).')
+    .volatile(),
   unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])
     .default('ask')
     .description('Strategy for tools that fall in no family: "ask" (fail-safe, default) or "allow" (permissive).'),
@@ -144,14 +172,18 @@ export const Config: Schema<Config> = Schema.object({
       'auto-edit': 'workspace-write',
       yolo: 'workspace-write',
     })
-    .description('Sandbox policy the plugin writes when switching into each mode. The "off" mode restores the composition default instead.'),
+    .description('Sandbox policy the plugin writes when switching into each mode. The "off" mode restores the composition default instead.')
+    .volatile(),
   askReason: Schema.string()
     .default('approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell')
-    .description('Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other).'),
+    .description('Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other).')
+    .volatile(),
   smartProvider: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null)
-    .description('LLM provider route for the smart-mode shell classifier. Null inherits the host default-model selection.'),
+    .description('LLM provider route for the smart-mode shell classifier. Null inherits the host default-model selection.')
+    .volatile(),
   smartModel: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null)
-    .description('LLM model id for the smart-mode shell classifier. Null inherits the host default-model selection.'),
+    .description('LLM model id for the smart-mode shell classifier. Null inherits the host default-model selection.')
+    .volatile(),
   smartExtraDangerPatterns: Schema.array(Schema.string()).default([])
     .description('Append-only danger regex patterns the smart classifier checks before the LLM. Case-insensitive; compiled at startup.'),
   smartDangerPatterns: Schema.union([Schema.array(Schema.string()), Schema.const(null)]).default(null)
@@ -185,26 +217,33 @@ export function setApprovalMode(session: Session, mode: ApprovalMode): void {
   sessionModes.set(session, mode)
 }
 
-export function apply(ctx: Context, config: Config): void {
-  // 部署方的 cordis entry 配置：作为 settings 的 `base` 层、在 settings 服务尚未挂载前作为回退值。
-  const entryConfig: Config = {
-    default: config.default ?? 'off',
-    editTools: config.editTools ?? ['write', 'edit', 'str_replace_editor'],
-    shellTools: config.shellTools ?? ['bash', 'pwsh', 'tool:bash', 'tool:pwsh'],
-    readOnlyTools: config.readOnlyTools ?? ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'],
-    autoAllowTools: config.autoAllowTools ?? ['ask_user_question', 'exit_plan_mode'],
-    unclassified: config.unclassified ?? 'ask',
-    sandboxDefaults: config.sandboxDefaults ?? { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
-    askReason: config.askReason ?? 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',
-    smartProvider: config.smartProvider ?? null,
-    smartModel: config.smartModel ?? null,
-    smartExtraDangerPatterns: config.smartExtraDangerPatterns ?? [],
-    smartDangerPatterns: config.smartDangerPatterns ?? null,
-    smartSessionMemory: config.smartSessionMemory ?? true,
-    smartSessionMemoryTtlMs: config.smartSessionMemoryTtlMs ?? 1_800_000,
-    smartTimeoutMs: config.smartTimeoutMs ?? 15_000,
-    smartClassifierPrompt: config.smartClassifierPrompt ?? DEFAULT_SMART_CLASSIFIER_PROMPT,
-  }
+export function apply(ctx: Context, config: VolatileConfig): void {
+  // 本插件自带 settings.section 页面（见 src/client），`auto: false` 抑制 settings
+  // 服务为 volatile Config 自动生成页面（rc.2 官方范式，ui-chat/ui-theme 同款）。
+  ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
+
+  // Live settings thunk：volatile 引用由运行时随 profile user 层更新，每次调用
+  // 从 `config.<field>.get()` 装配一张纯快照，让设置页编辑在下一次
+  // `tools/pre-execute` 就生效（无需重启）。数组/对象字段展开拷贝，剥离
+  // `VolatileSnapshot` 的 readonly 包装；下游调用点读到的仍是普通 Config。
+  const cfgThunk = (): Config => ({
+    default: config.default,
+    editTools: [...config.editTools.get()],
+    shellTools: [...config.shellTools.get()],
+    readOnlyTools: [...config.readOnlyTools.get()],
+    autoAllowTools: [...config.autoAllowTools.get()],
+    unclassified: config.unclassified,
+    sandboxDefaults: { ...config.sandboxDefaults.get() },
+    askReason: config.askReason.get(),
+    smartProvider: config.smartProvider.get(),
+    smartModel: config.smartModel.get(),
+    smartExtraDangerPatterns: config.smartExtraDangerPatterns,
+    smartDangerPatterns: config.smartDangerPatterns,
+    smartSessionMemory: config.smartSessionMemory,
+    smartSessionMemoryTtlMs: config.smartSessionMemoryTtlMs,
+    smartTimeoutMs: config.smartTimeoutMs,
+    smartClassifierPrompt: config.smartClassifierPrompt,
+  })
 
   // 组合默认 sandbox：无 session 覆盖时沙箱旋钮应落回的值（off 联动写回它）。
   // 使用 ctx.get() 而不是 inject 声明，避免fiber启动依赖
@@ -218,11 +257,6 @@ export function apply(ctx: Context, config: Config): void {
   const sandboxPolicy: SandboxPolicyService | undefined = ctx.get('sandboxPolicy')
   const shell = ctx.get('shell') as { sandboxMode?: string } | undefined
   const compositionDefaultSandbox = sandboxPolicy?.defaultMode ?? shell?.sandboxMode ?? 'workspace-write'
-
-  // Live settings thunk：每次调用返回最新的 settings 解析值，让用户编辑在下一次
-  // `tools/pre-execute` 就生效（无需重启）。初始值退回 entryConfig，直到 settings
-  // 服务挂载并通过 `setSource` 把它换成 scope.get()。
-  let cfgThunk: () => Config = () => entryConfig
 
   const effectiveMode = (session: Session): ApprovalMode => getApprovalMode(session, cfgThunk().default ?? 'off')
 
@@ -442,17 +476,6 @@ export function apply(ctx: Context, config: Config): void {
         applyMode(agent.session, mode)
         return { kind: 'success', text: `approval mode switched to ${mode}` }
       }
-    })
-  })
-
-  // ── settings：全 Config schema 作为用户可编辑的 namespace ───────────────
-  // settings 的 `base` 层用 entryConfig（部署方 cordis 配置），用户编辑作为 user 层叠在上面。
-  // 客户端的 settings page 用同一个 namespace 字符串路由（见 src/client/index.ts 的 SETTINGS_ID）。
-  const APPROVAL_MODE_SETTINGS_NAMESPACE = 'approval-mode'
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, APPROVAL_MODE_SETTINGS_NAMESPACE, Config, entryConfig, {
-      setSource: (current) => { cfgThunk = current },
-      onChange: () => {},
     })
   })
 }

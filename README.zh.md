@@ -258,7 +258,7 @@ Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。
 ## 设置页面
 
 打开 Web UI 侧边栏 → **设置** → **审批模式**（最底部，Plugins 之后）即可
-编辑本插件暴露的六个用户可编辑 Config 字段。页面分为三个子区块：
+编辑本插件暴露的八个用户可编辑 Config 字段。页面分为三个子区块：
 
 1. **工具族分类** —— 每个族（`editTools`、`shellTools`、`readOnlyTools`、
    `autoAllowTools`）一个逗号分隔的文本输入框。值按集合处理：顺序无
@@ -268,9 +268,9 @@ Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。
    schema 共用的技术标识符）。
 3. **审批弹窗** —— `askReason` 多行文本模板
 
-其余两个 Config 字段（`default`、`unclassified`）刻意保持为**仅部署方可配**：
-写在 `cordis.yml` 的 entry config 里、不出现在设置页面。运行时这两个值
-直接取自 cordis `base`。
+其余 Config 字段（`default`、`unclassified` 以及六个 `smart*` 部署方旋钮）
+刻意保持为**仅部署方可配**：写在部署方的 cordis 配置里、不出现在设置页面。
+运行时这些值直接取自 cordis `base`。
 
 每个字段都带：
 
@@ -282,14 +282,16 @@ Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。
 
 ### 层次模型
 
-settings 命名空间 `approval-mode` 的解析值经过三层：
+用户可编辑字段在插件入口 schema 上声明为 `.volatile()`。解析值经过三层：
 
 ```
-schema 默认  →  cordis `base`（部署方的 cordis.yml）  →  用户覆盖
+schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户覆盖
 ```
 
-用户未编辑的字段值取自部署方的 cordis 配置；用户编辑过的字段值取用户层。
-Reset 清除用户覆盖（让部署方的 base 重新浮现）。
+用户覆盖持久化到 profile `cordis.patch.yml` 的 user 层（entry id
+`dsh-user-approval-mode`），由运行时 live 应用。用户未编辑的字段值取自
+部署方的 cordis 配置；用户编辑过的字段值取用户层。Reset 清除用户覆盖
+（让部署方的 base 重新浮现）。
 
 ### 用户可编辑字段
 
@@ -309,8 +311,8 @@ Reset 清除用户覆盖（让部署方的 base 重新浮现）。
 
 ### 生效时机
 
-六个用户可编辑字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，
-无需重启 DSH。运行时闸门每次工具调用都会重读 settings 范围。
+八个用户可编辑字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，
+无需重启 DSH。运行时闸门每次工具调用都会重读 live 的 volatile Config。
 
 ### 族名单之间的重叠
 
