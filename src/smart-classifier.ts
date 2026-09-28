@@ -560,8 +560,14 @@ export function createSmartShellEvaluator(options: {
   /** Optional `reason` string passed through when the upstream asked the
    *  user to escalate. We surface it as `justification` in evidence. */
   reasonForExec?: (execName: string) => string | undefined
+  /** Optional hook fired once per LLM classification call with the
+   *  resolved provider/model the classifier is about to use. Lets the
+   *  host surface the effective model id (including host-default
+   *  inheritance) in the terminal log. Never called on the short-circuit
+   *  paths (danger hit, memory hit, no-default-model, …). */
+  onModelResolved?: (selection: { provider: string; model: string }) => void
 }): SmartShellEvaluator {
-  const { config, patterns, llm, defaultModel, memory, lifetimeSignal, reasonForExec } = options
+  const { config, patterns, llm, defaultModel, memory, lifetimeSignal, reasonForExec, onModelResolved } = options
 
   return async (exec, session) => {
     const command = commandFromArguments(exec.arguments)
@@ -617,6 +623,11 @@ export function createSmartShellEvaluator(options: {
     // execution; we thread it so the LLM call cancels if the user aborts
     // the agent turn mid-classification.
     const execSignal = (exec as { signal?: AbortSignal }).signal ?? new AbortController().signal
+
+    // Surface the resolved classification model before the LLM call. A
+    // broken logger must never change the approval outcome, so the host
+    // hook is guarded like every other log path.
+    try { onModelResolved?.(selection) } catch { /* swallow */ }
 
     const decision = await classifySmartShell(
       llm,

@@ -256,6 +256,18 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
 
+  // Terminal log of the effective classification model, fired right
+  // before each LLM classifier call. The resolved selection includes the
+  // host-default inheritance when `smartProvider`/`smartModel` are null,
+  // so developers see the model id the classifier actually used.
+  const logSmartModel = (selection: { provider: string; model: string }): void => {
+    try {
+      ctx.logger.info(`[dsh-user-approval[smart]] classifier model=${selection.model} provider=${selection.provider}`)
+    } catch {
+      // Swallow logger failures; the classification outcome is unaffected.
+    }
+  }
+
   // ── Smart-mode evaluator lifecycle ────────────────────────────────────────
   // The classifier is only useful when smart mode is in play, but the
   // evaluator state (compiled patterns, session memory, AbortController)
@@ -291,6 +303,7 @@ export function apply(ctx: Context, config: Config): void {
       defaultModel,
       memory: smartMemory,
       lifetimeSignal,
+      onModelResolved: logSmartModel,
     })(exec, session)
     const tracked = Promise.resolve().then(() => task).finally(() => activeEvaluations.delete(tracked))
     activeEvaluations.add(tracked)
