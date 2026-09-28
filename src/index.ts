@@ -256,17 +256,12 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
 
-  // Terminal log of the effective classification model, fired right
-  // before each LLM classifier call. The resolved selection includes the
-  // host-default inheritance when `smartProvider`/`smartModel` are null,
-  // so developers see the model id the classifier actually used.
-  const logSmartModel = (selection: { provider: string; model: string }): void => {
-    try {
-      ctx.logger.info(`[dsh-user-approval[smart]] classifier model=${selection.model} provider=${selection.provider}`)
-    } catch {
-      // Swallow logger failures; the classification outcome is unaffected.
-    }
-  }
+  // Model suffix appended to a classification decision line when the LLM
+  // classifier actually ran. The selection rides the evaluator verdict, so
+  // each classification produces exactly one log line with the effective
+  // model id (including host-default inheritance).
+  const modelSuffix = (selection?: { provider: string; model: string }): string =>
+    selection === undefined ? '' : ` model=${selection.model} provider=${selection.provider}`
 
   // ── Smart-mode evaluator lifecycle ────────────────────────────────────────
   // The classifier is only useful when smart mode is in play, but the
@@ -303,7 +298,6 @@ export function apply(ctx: Context, config: Config): void {
       defaultModel,
       memory: smartMemory,
       lifetimeSignal,
-      onModelResolved: logSmartModel,
     })(exec, session)
     const tracked = Promise.resolve().then(() => task).finally(() => activeEvaluations.delete(tracked))
     activeEvaluations.add(tracked)
@@ -356,10 +350,10 @@ export function apply(ctx: Context, config: Config): void {
       }
       const verdict = await smartEvaluator(exec, agent.session)
       if (verdict.kind === 'allow') {
-        logSmartDecision('allow', `detail=${verdict.source}`)
+        logSmartDecision('allow', `detail=${verdict.source}${modelSuffix(verdict.selection)}`)
         return { kind: 'allow' }
       }
-      logSmartDecision('ask', `detail=${verdict.detail}`)
+      logSmartDecision('ask', `detail=${verdict.detail}${modelSuffix(verdict.selection)}`)
       return {
         kind: 'ask',
         reason: (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')

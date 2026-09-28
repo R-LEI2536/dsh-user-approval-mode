@@ -37,18 +37,14 @@ interface HarnessOptions {
   /** When set, the harness attaches this events array to the session stub
    *  via `snapshotEvents()`. Used by the tooLong short-circuit test. */
   sessionEvents?: readonly unknown[]
-  /** When set, replaces the default `onModelResolved` capture; tests that
-   *  need a custom logger can override it. */
-  onModelResolved?: (selection: { provider: string; model: string }) => void
 }
 
 interface Harness {
-  evaluate: (exec: ExecStub) => Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string }>
+  evaluate: (exec: ExecStub) => Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; selection?: { provider: string; model: string } }>
   memory: SmartSessionMemory
   streamCalls: number
   lastSelection: { provider: string; model: string } | undefined
   lastEvidence: { toolName?: string; command?: string | null; toolArguments?: string | null } | undefined
-  resolvedSelections: { provider: string; model: string }[]
 }
 
 const baseConfig: SmartEvaluatorConfig = {
@@ -90,11 +86,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   const streamCalls = { value: 0 }
   const lastSelectionRef: { value: { provider: string; model: string } | undefined } = { value: undefined }
   const lastEvidenceRef: { value: Harness['lastEvidence'] } = { value: undefined }
-  const resolvedSelectionsRef: { value: { provider: string; model: string }[] } = { value: [] }
   const factory = options.streamFactory ?? (() => textStream('{"verdict":"approve"}'))
-  const onModelResolved = options.onModelResolved ?? ((selection: { provider: string; model: string }) => {
-    resolvedSelectionsRef.value.push(selection)
-  })
 
   const llm: SmartLlmService | undefined = options.llmAvailable === false
     ? undefined
@@ -127,7 +119,6 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     defaultModel: options.defaultModel,
     memory,
     lifetimeSignal,
-    onModelResolved,
   })
 
   const sessionStub = options.sessionEvents !== undefined
@@ -145,12 +136,11 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     evaluate: async (exec) => evaluator(
       { name: exec.name, arguments: exec.arguments },
       sessionStub as never,
-    ) as unknown as Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string }>,
+    ) as unknown as Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; selection?: { provider: string; model: string } }>,
     memory,
     get streamCalls() { return streamCalls.value },
     get lastSelection() { return lastSelectionRef.value },
     get lastEvidence() { return lastEvidenceRef.value },
-    get resolvedSelections() { return resolvedSelectionsRef.value },
   }
 }
 
@@ -191,7 +181,7 @@ test('evaluator: LLM approve → allow + memory written (classifier source)', as
   const memory = createSmartSessionMemory(60_000)
   const h = makeHarness({ memory })
   const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'npm test' } })
-  assert.deepEqual(verdict, { kind: 'allow', source: 'classifier' })
+  assert.deepEqual(verdict, { kind: 'allow', source: 'classifier', selection: { provider: 'mock-provider', model: 'mock-model' } })
   assert.equal(h.streamCalls, 1)
   // Evidence sent to the LLM carries toolName + command.
   assert.equal(h.lastEvidence?.toolName, 'bash')
@@ -356,50 +346,53 @@ test('evaluator: under-budget user message reaches the LLM normally', async () =
   assert.equal(h.streamCalls, 1)
 })
 
-test('evaluator: onModelResolved fires with the configured model before the LLM call', async () => {
+test('evaluator: classifier allow verdict carries the configured model selection', async () => {
   const h = makeHarness()
-  await h.evaluate({ name: 'bash', arguments: { command: 'npm test' } })
-  assert.equal(h.streamCalls, 1)
-  assert.deepEqual(h.resolvedSelections, [{ provider: 'mock-provider', model: 'mock-model' }])
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'npm test' } })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(verdict.source, 'classifier')
+  assert.deepEqual(verdict.selection, { provider: 'mock-provider', model: 'mock-model' })
 })
 
-test('evaluator: onModelResolved reports the host-default fallback model', async () => {
+test('evaluator: classifier ask verdict carries the host-default fallback model', async () => {
   const defaultModel: SmartDefaultModelService = {
     currentSelection: () => ({ provider: 'fallback-provider', model: 'fallback-model' }),
   }
   const h = makeHarness({
     configOverrides: { smartProvider: null, smartModel: null },
     defaultModel,
+    streamFactory: () => textStream('{"verdict":"ask"}'),
   })
-  await h.evaluate({ name: 'bash', arguments: { command: 'ls' } })
-  assert.equal(h.streamCalls, 1)
-  assert.deepEqual(h.resolvedSelections, [{ provider: 'fallback-provider', model: 'fallback-model' }])
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'ls' } })
+  assert.equal(verdict.kind, 'ask')
+  assert.deepEqual(verdict.selection, { provider: 'fallback-provider', model: 'fallback-model' })
 })
 
-test('evaluator: onModelResolved does not fire on short-circuit paths', async () => {
+test('evaluator: short-circuit verdicts carry no model selection', async () => {
   // Danger hit: no LLM call, hence no model resolution.
   const danger = makeHarness({
     configOverrides: { smartExtraDangerPatterns: ['\\bNOPE\\b'] },
   })
-  await danger.evaluate({ name: 'bash', arguments: { command: 'something NOPE here' } })
-  assert.deepEqual(danger.resolvedSelections, [])
+  const dangerVerdict = await danger.evaluate({ name: 'bash', arguments: { command: 'something NOPE here' } })
+  assert.equal(dangerVerdict.selection, undefined)
 
-  // Memory hit: approves without touching the LLM or the model hook.
+  // Memory hit: approves without touching the LLM or resolving a model.
   const memory = createSmartSessionMemory(60_000)
   const args = { command: 'npm test' }
   const setup = makeHarness({ memory })
   await setup.evaluate({ name: 'bash', arguments: args })
   const cached = makeHarness({ memory })
-  await cached.evaluate({ name: 'bash', arguments: args })
-  assert.deepEqual(cached.resolvedSelections, [])
-  assert.deepEqual(cached.lastSelection, undefined)
+  const cachedVerdict = await cached.evaluate({ name: 'bash', arguments: args })
+  assert.equal(cachedVerdict.kind, 'allow')
+  assert.equal(cachedVerdict.source, 'remembered')
+  assert.equal(cachedVerdict.selection, undefined)
 
-  // No default model: resolution fails before the LLM, hook stays silent.
+  // No default model: resolution fails before the LLM, no selection.
   const noModel = makeHarness({
     configOverrides: { smartProvider: null, smartModel: null },
     defaultModel: undefined,
   })
-  const verdict = await noModel.evaluate({ name: 'bash', arguments: { command: 'ls' } })
-  assert.equal(verdict.kind, 'ask')
-  assert.deepEqual(noModel.resolvedSelections, [])
+  const noModelVerdict = await noModel.evaluate({ name: 'bash', arguments: { command: 'ls' } })
+  assert.equal(noModelVerdict.kind, 'ask')
+  assert.equal(noModelVerdict.selection, undefined)
 })

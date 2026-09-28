@@ -65,12 +65,23 @@ export interface SmartDefaultModelService {
   currentSelection(): { provider: string; model: string } | undefined
 }
 
+/** The resolved provider/model the classifier used, present only when
+ *  the LLM classification call actually ran. Lets the host render the
+ *  effective model id (including host-default inheritance) in the same
+ *  decision log line without a separate pre-call hook. */
+export interface SmartModelSelection {
+  readonly provider: string
+  readonly model: string
+}
+
 /** Verdict for one shell call. `allow` means the plugin should return
  *  `{ kind: 'allow' }`; `ask` means it should fall through to the existing
- *  approval chain via `{ kind: 'ask' }`. */
+ *  approval chain via `{ kind: 'ask' }`. `selection` is set only on the
+ *  LLM-classifier paths; short-circuit outcomes (danger hit, session
+ *  memory, no-default-model, …) leave it undefined. */
 export type SmartShellDecision =
-  | { readonly kind: 'allow'; readonly source: 'remembered' | 'classifier' }
-  | { readonly kind: 'ask'; readonly detail: string }
+  | { readonly kind: 'allow'; readonly source: 'remembered' | 'classifier'; readonly selection?: SmartModelSelection }
+  | { readonly kind: 'ask'; readonly detail: string; readonly selection?: SmartModelSelection }
 
 /** Factory return type. */
 export type SmartShellEvaluator = (
@@ -560,14 +571,8 @@ export function createSmartShellEvaluator(options: {
   /** Optional `reason` string passed through when the upstream asked the
    *  user to escalate. We surface it as `justification` in evidence. */
   reasonForExec?: (execName: string) => string | undefined
-  /** Optional hook fired once per LLM classification call with the
-   *  resolved provider/model the classifier is about to use. Lets the
-   *  host surface the effective model id (including host-default
-   *  inheritance) in the terminal log. Never called on the short-circuit
-   *  paths (danger hit, memory hit, no-default-model, …). */
-  onModelResolved?: (selection: { provider: string; model: string }) => void
 }): SmartShellEvaluator {
-  const { config, patterns, llm, defaultModel, memory, lifetimeSignal, reasonForExec, onModelResolved } = options
+  const { config, patterns, llm, defaultModel, memory, lifetimeSignal, reasonForExec } = options
 
   return async (exec, session) => {
     const command = commandFromArguments(exec.arguments)
@@ -624,11 +629,6 @@ export function createSmartShellEvaluator(options: {
     // the agent turn mid-classification.
     const execSignal = (exec as { signal?: AbortSignal }).signal ?? new AbortController().signal
 
-    // Surface the resolved classification model before the LLM call. A
-    // broken logger must never change the approval outcome, so the host
-    // hook is guarded like every other log path.
-    try { onModelResolved?.(selection) } catch { /* swallow */ }
-
     const decision = await classifySmartShell(
       llm,
       defaultModel,
@@ -640,11 +640,13 @@ export function createSmartShellEvaluator(options: {
       config.smartTimeoutMs,
       config.smartClassifierPrompt,
     )
+    // Every return past this point ran the LLM classifier, so the verdict
+    // carries the resolved model selection for the host's decision log.
     if (decision.verdict === 'approve') {
-      if (lifetimeSignal.aborted) return { kind: 'ask', detail: 'unloaded' }
+      if (lifetimeSignal.aborted) return { kind: 'ask', detail: 'unloaded', selection }
       if (memoryKey !== undefined) memory.remember(session.id, memoryKey, 'classifier')
-      return { kind: 'allow', source: 'classifier' }
+      return { kind: 'allow', source: 'classifier', selection }
     }
-    return { kind: 'ask', detail: decision.detail }
+    return { kind: 'ask', detail: decision.detail, selection }
   }
 }
