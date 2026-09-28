@@ -22,6 +22,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 - **Five Approval Modes**: `request`, `auto-edit`, `smart` (NEW), `yolo`, `off`
 - **Web UI Mode Selector**: Quick-switch chip under the input box for changing approval modes without commands
 - **Settings Page**: Configure approval-mode options (tool family lists, per-mode sandbox policy, approval prompt template, and smart-classifier provider/model) in `Settings → Approval Modes`. The default mode, the unclassified strategy, and most smart-mode internals remain deployer-only (set in `cordis.yml`).
+- **LLM Provider Reuse**: The Smart classifier reuses DSH's configured LLM provider and model; this plugin does not configure an endpoint, API key, or OpenAI-compatible protocol separately.
 - **Smart-mode shell classifier**: A four-step pipeline (danger list → session memory → LLM classifier → fail-safe) auto-approves routine shell commands while keeping dangerous or unclear ones in front of the user.
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
