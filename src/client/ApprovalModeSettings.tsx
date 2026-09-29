@@ -154,6 +154,12 @@ interface CsvInputProps {
   value: string[]
   onChange: (next: string[]) => void
   placeholder: string
+  disabled?: boolean
+}
+
+/** Element-wise list equality for the commit no-op guard. */
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((entry, index) => entry === b[index])
 }
 
 /** Editable string[] as a single comma-separated text input. Treats the value
@@ -164,8 +170,9 @@ interface CsvInputProps {
  *  round-trip through the settings form on each character; the dedup/trim
  *  pass can change the string shape, which would reset the controlled input
  *  value and snap the caret to the end mid-typing. Holding the parsed
- *  result until blur keeps the cursor stable while the user edits. */
-function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
+ *  result until blur keeps the cursor stable while the user edits. A blur
+ *  whose parsed result equals the current value sends no write at all. */
+function CsvInput({ value, onChange, placeholder, disabled }: CsvInputProps) {
   // Local copy mirrors the value; resyncs only when the prop changes (e.g.,
   // an external reset or form update overrides the in-progress edit).
   const [text, setText] = useState(value.join(', '))
@@ -175,7 +182,7 @@ function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
     const parts = [...new Set(
       next.split(',').map(s => s.trim()).filter(s => s.length > 0),
     )]
-    onChange(parts)
+    if (!sameList(parts, value)) onChange(parts)
   }
 
   return (
@@ -183,6 +190,7 @@ function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
       value={text}
       placeholder={placeholder}
       className={css.csvInput}
+      disabled={disabled}
       onChange={(e) => { setText(e.target.value) }}
       onBlur={(e) => { commit(e.target.value) }}
     />
@@ -200,15 +208,38 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
   )
   const value = readValue(snapshot.value)
 
+  // Write-in-flight guard and refused-write alert (official DeveloperToolsRow
+  // pattern): busy disables the control being committed, saveFailed renders an
+  // inline alert so a rejected write never vanishes silently.
+  const [busy, setBusy] = useState<ReadonlySet<keyof Config>>(new Set())
+  const [saveFailed, setSaveFailed] = useState(false)
+
   // Always-visible reset: clears the user override for this top-level field,
   // letting it re-inherit the cordis `base`. No confirm — reset is reversible.
-  const reset = (field: keyof Config): void => {
-    void form.unset(field)
+  const resetField = async (field: keyof Config): Promise<void> => {
+    setSaveFailed(false)
+    if (!await form.unset(field)) setSaveFailed(true)
+  }
+  const reset = (field: keyof Config): void => { void resetField(field) }
+
+  // Official settings-page pattern (cf. DeveloperToolsRow): a commit disables
+  // the control while in flight, and a refused write surfaces an alert instead
+  // of silently reverting — the recovery re-read would otherwise erase the
+  // field on screen without the user knowing why. No auto-retry: re-applying
+  // could clobber a concurrent edit.
+  const commitField = async (field: keyof Config, next: unknown): Promise<void> => {
+    setSaveFailed(false)
+    setBusy(prev => new Set(prev).add(field))
+    try {
+      if (!await form.set(field, next)) setSaveFailed(true)
+    } finally {
+      setBusy(prev => { const rest = new Set(prev); rest.delete(field); return rest })
+    }
   }
 
   // SandboxDefaults is a single field; each mode row edits a sub-key.
   const setSandboxMode = (mode: 'request' | 'auto-edit' | 'smart' | 'yolo', sandboxMode: string): void => {
-    void form.set('sandboxDefaults', { ...value.sandboxDefaults, [mode]: sandboxMode })
+    void commitField('sandboxDefaults', { ...value.sandboxDefaults, [mode]: sandboxMode })
   }
 
   // askReason is a free-form textarea. Live committing on every keystroke
@@ -218,7 +249,7 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
   const [askReasonText, setAskReasonText] = useState(value.askReason)
   useEffect(() => { setAskReasonText(value.askReason) }, [value.askReason])
   const commitAskReason = (next: string): void => {
-    if (next !== value.askReason) { void form.set('askReason', next) }
+    if (next !== value.askReason) { void commitField('askReason', next) }
   }
 
   // smartProvider/smartModel are single-line inputs. Same live-commit hazard
@@ -229,19 +260,22 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
   useEffect(() => { setSmartProviderText(value.smartProvider ?? '') }, [value.smartProvider])
   const commitSmartProvider = (next: string): void => {
     const normalized = next === '' ? null : next
-    if (normalized !== value.smartProvider) { void form.set('smartProvider', normalized) }
+    if (normalized !== value.smartProvider) { void commitField('smartProvider', normalized) }
   }
   const [smartModelText, setSmartModelText] = useState(value.smartModel ?? '')
   useEffect(() => { setSmartModelText(value.smartModel ?? '') }, [value.smartModel])
   const commitSmartModel = (next: string): void => {
     const normalized = next === '' ? null : next
-    if (normalized !== value.smartModel) { void form.set('smartModel', normalized) }
+    if (normalized !== value.smartModel) { void commitField('smartModel', normalized) }
   }
 
   return (
     <div className={css.section}>
       <h2 className={css.title}>{t('nav.label')}</h2>
       <p className={css.intro}>{t('intro')}</p>
+      {saveFailed && (
+        <p className={css.saveError} role="alert">{t('save.conflict')}</p>
+      )}
 
       {/* ── Tool family classification ────────────────────────────────── */}
       <div className={css.subSection}>
@@ -256,7 +290,8 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.editTools}
-              onChange={(v) => { void form.set('editTools', v) }}
+              disabled={busy.has('editTools')}
+              onChange={(v) => { void commitField('editTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -270,7 +305,8 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.shellTools}
-              onChange={(v) => { void form.set('shellTools', v) }}
+              disabled={busy.has('shellTools')}
+              onChange={(v) => { void commitField('shellTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -284,7 +320,8 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.readOnlyTools}
-              onChange={(v) => { void form.set('readOnlyTools', v) }}
+              disabled={busy.has('readOnlyTools')}
+              onChange={(v) => { void commitField('readOnlyTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -298,7 +335,8 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.autoAllowTools}
-              onChange={(v) => { void form.set('autoAllowTools', v) }}
+              disabled={busy.has('autoAllowTools')}
+              onChange={(v) => { void commitField('autoAllowTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -402,6 +440,7 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
               value={smartProviderText}
               placeholder={t('smartClassifier.provider.placeholder')}
               className={css.csvInput}
+              disabled={busy.has('smartProvider')}
               onChange={(e) => { setSmartProviderText(e.target.value) }}
               onBlur={(e) => { commitSmartProvider(e.target.value) }}
             />
@@ -417,6 +456,7 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
               value={smartModelText}
               placeholder={t('smartClassifier.model.placeholder')}
               className={css.csvInput}
+              disabled={busy.has('smartModel')}
               onChange={(e) => { setSmartModelText(e.target.value) }}
               onBlur={(e) => { commitSmartModel(e.target.value) }}
             />
@@ -439,6 +479,7 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
               value={askReasonText}
               placeholder={t('askReason.placeholder')}
               className={css.textarea}
+              disabled={busy.has('askReason')}
               onChange={(e) => { setAskReasonText(e.target.value) }}
               onBlur={(e) => { commitAskReason(e.target.value) }}
             />

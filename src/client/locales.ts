@@ -40,6 +40,9 @@ export const enPage = {
   // Page intro
   'intro': 'Configure tool classification, sandbox policy, the approval dialog template, and the smart-mode shell classifier. The default mode and unclassified strategy are set in cordis.yml.',
 
+  // Refused-write alert (visible when the Host rejects a settings mutation)
+  'save.conflict': 'Save failed: the configuration document was changed by another session. Your change was not saved.',
+
   // Sub-section headers
   'section.tools': 'Tool classification',
   'section.sandbox': 'Sandbox policy',
@@ -96,6 +99,9 @@ export const zhPage = {
 
   // Page intro
   'intro': '配置工具族分类、各模式 sandbox 策略、审批弹窗文案模板，以及 smart 模式 shell 分类器。默认模式与未分类策略写在 cordis.yml 里。',
+
+  // Refused-write alert (visible when the Host rejects a settings mutation)
+  'save.conflict': '保存失败：配置文档已被其他会话修改，本次修改未生效。',
 
   // Sub-section headers
   'section.tools': '工具族分类',
