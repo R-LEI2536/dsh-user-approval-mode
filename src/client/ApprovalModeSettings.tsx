@@ -221,6 +221,23 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
     if (next !== value.askReason) { void form.set('askReason', next) }
   }
 
+  // smartProvider/smartModel are single-line inputs. Same live-commit hazard
+  // as askReason above: committing on every keystroke round-trips through the
+  // settings form and snaps the caret to the end mid-typing (fast typing can
+  // even drop characters). Hold each draft locally and commit on blur.
+  const [smartProviderText, setSmartProviderText] = useState(value.smartProvider ?? '')
+  useEffect(() => { setSmartProviderText(value.smartProvider ?? '') }, [value.smartProvider])
+  const commitSmartProvider = (next: string): void => {
+    const normalized = next === '' ? null : next
+    if (normalized !== value.smartProvider) { void form.set('smartProvider', normalized) }
+  }
+  const [smartModelText, setSmartModelText] = useState(value.smartModel ?? '')
+  useEffect(() => { setSmartModelText(value.smartModel ?? '') }, [value.smartModel])
+  const commitSmartModel = (next: string): void => {
+    const normalized = next === '' ? null : next
+    if (normalized !== value.smartModel) { void form.set('smartModel', normalized) }
+  }
+
   return (
     <div className={css.section}>
       <h2 className={css.title}>{t('nav.label')}</h2>
@@ -382,13 +399,11 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
             resetLabel={t('reset.label')}
           >
             <Input
-              value={value.smartProvider ?? ''}
+              value={smartProviderText}
               placeholder={t('smartClassifier.provider.placeholder')}
               className={css.csvInput}
-              onChange={(e) => {
-                const next = e.target.value
-                void form.set('smartProvider', next === '' ? null : next)
-              }}
+              onChange={(e) => { setSmartProviderText(e.target.value) }}
+              onBlur={(e) => { commitSmartProvider(e.target.value) }}
             />
           </FieldShell>
           <FieldShell
@@ -399,13 +414,11 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
             resetLabel={t('reset.label')}
           >
             <Input
-              value={value.smartModel ?? ''}
+              value={smartModelText}
               placeholder={t('smartClassifier.model.placeholder')}
               className={css.csvInput}
-              onChange={(e) => {
-                const next = e.target.value
-                void form.set('smartModel', next === '' ? null : next)
-              }}
+              onChange={(e) => { setSmartModelText(e.target.value) }}
+              onBlur={(e) => { commitSmartModel(e.target.value) }}
             />
           </FieldShell>
         </div>
