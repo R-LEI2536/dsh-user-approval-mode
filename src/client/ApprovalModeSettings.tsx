@@ -1,9 +1,9 @@
 /**
- * ApprovalModeSettings: the settings.section page for editing the six
- * user-facing Config fields. Bound to the `approval-mode` settings namespace
- * via the injected scope; reads via `scope.getSnapshot()`, writes via
- * `scope.set()` (merge into user layer) or `scope.unset(field)` (clear user
- * override, re-inherit the cordis `base`).
+ * ApprovalModeSettings: the settings.section page for editing the eight
+ * user-facing Config fields. Bound to the plugin entry's volatile Config via
+ * the injected configuration form; reads via `form.getSnapshot()`, writes via
+ * `form.set()` (merge into the profile user layer) or `form.unset(field)`
+ * (clear user override, re-inherit the deployer's cordis base).
  *
  * Visual layout follows the DSH settings-panel design language (see
  * ui-settings-models / ui-settings-plugins for the canonical reference):
@@ -11,15 +11,14 @@
  * vertical block (label row with a text Reset on the right, control,
  * hint) separated from its neighbours by a 1px hairline.
  *
- * Note: `default` and `unclassified` are part of the Config schema but are
+ * Note: the other 8 Config fields are part of the schema but are
  * deliberately deployer-only — they live in `cordis.yml`, not here.
  */
 import { useState, useEffect, useSyncExternalStore, useRef, type ReactElement } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import { Menu, Input, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-// DSH 0.1.2-alpha.3: dsh-client-runtime 废弃，SettingsScope 现在走
-// dsh-client-ui-settings 的客户端子路径。
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { Menu, Input, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+// DSH 0.1.7: `SettingsScope` 已改名为 `ConfigForm`（dsh-client-ui-settings 的客户端子路径）。
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Config } from '../index'
 import type { ApprovalPageKey } from './locales'
 import css from './ApprovalModeSettings.module.css'
@@ -28,8 +27,8 @@ import css from './ApprovalModeSettings.module.css'
 
 /** Injected business face from the client plugin. */
 export interface ApprovalModeSettingsInjected {
-  /** Live settings scope for the `approval-mode` namespace. */
-  scope: SettingsScope<Config>
+  /** Live configuration form for the profile entry's volatile Config. */
+  form: ConfigForm<Config>
 }
 
 /** Full component props: runtime share + injected share + locale seat. */
@@ -135,7 +134,7 @@ function EnumDropdown<T extends string>({ value, items, resolveLabel, onChange }
           onClick={() => { setOpen(!open) }}
         >
           <span>{resolveLabel(value)}</span>
-          <IconChevronDownOutline14 size={14} className={css.dropdownChevron} />
+          <IconChevronDownOutlineRegular size={14} className={css.dropdownChevron} />
         </button>
       )}
       items={items.map(item => ({ id: item.id, label: resolveLabel(item.id) }))}
@@ -155,6 +154,12 @@ interface CsvInputProps {
   value: string[]
   onChange: (next: string[]) => void
   placeholder: string
+  disabled?: boolean
+}
+
+/** Element-wise list equality for the commit no-op guard. */
+function sameList(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((entry, index) => entry === b[index])
 }
 
 /** Editable string[] as a single comma-separated text input. Treats the value
@@ -162,13 +167,14 @@ interface CsvInputProps {
  *  and deduplicates (first occurrence wins).
  *
  *  Commit happens on blur, NOT on every keystroke. Live committing would
- *  round-trip through the settings scope on each character; the dedup/trim
+ *  round-trip through the settings form on each character; the dedup/trim
  *  pass can change the string shape, which would reset the controlled input
  *  value and snap the caret to the end mid-typing. Holding the parsed
- *  result until blur keeps the cursor stable while the user edits. */
-function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
+ *  result until blur keeps the cursor stable while the user edits. A blur
+ *  whose parsed result equals the current value sends no write at all. */
+function CsvInput({ value, onChange, placeholder, disabled }: CsvInputProps) {
   // Local copy mirrors the value; resyncs only when the prop changes (e.g.,
-  // an external reset or scope update overrides the in-progress edit).
+  // an external reset or form update overrides the in-progress edit).
   const [text, setText] = useState(value.join(', '))
   useEffect(() => { setText(value.join(', ')) }, [value])
 
@@ -176,7 +182,7 @@ function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
     const parts = [...new Set(
       next.split(',').map(s => s.trim()).filter(s => s.length > 0),
     )]
-    onChange(parts)
+    if (!sameList(parts, value)) onChange(parts)
   }
 
   return (
@@ -184,6 +190,7 @@ function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
       value={text}
       placeholder={placeholder}
       className={css.csvInput}
+      disabled={disabled}
       onChange={(e) => { setText(e.target.value) }}
       onBlur={(e) => { commit(e.target.value) }}
     />
@@ -192,40 +199,83 @@ function CsvInput({ value, onChange, placeholder }: CsvInputProps) {
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
-export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
-  // useSyncExternalStore on the scope; getSnapshot returns a stable reference
+export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
+  // useSyncExternalStore on the form; getSnapshot returns a stable reference
   // until the next commit, so React bails out of unnecessary re-renders.
   const snapshot = useSyncExternalStore(
-    (cb) => scope.subscribe(cb),
-    () => scope.getSnapshot(),
+    (cb) => form.subscribe(cb),
+    () => form.getSnapshot(),
   )
   const value = readValue(snapshot.value)
 
+  // Write-in-flight guard and refused-write alert (official DeveloperToolsRow
+  // pattern): busy disables the control being committed, saveFailed renders an
+  // inline alert so a rejected write never vanishes silently.
+  const [busy, setBusy] = useState<ReadonlySet<keyof Config>>(new Set())
+  const [saveFailed, setSaveFailed] = useState(false)
+
   // Always-visible reset: clears the user override for this top-level field,
   // letting it re-inherit the cordis `base`. No confirm — reset is reversible.
-  const reset = (field: keyof Config): void => {
-    void scope.unset(field)
+  const resetField = async (field: keyof Config): Promise<void> => {
+    setSaveFailed(false)
+    if (!await form.unset(field)) setSaveFailed(true)
+  }
+  const reset = (field: keyof Config): void => { void resetField(field) }
+
+  // Official settings-page pattern (cf. DeveloperToolsRow): a commit disables
+  // the control while in flight, and a refused write surfaces an alert instead
+  // of silently reverting — the recovery re-read would otherwise erase the
+  // field on screen without the user knowing why. No auto-retry: re-applying
+  // could clobber a concurrent edit.
+  const commitField = async (field: keyof Config, next: unknown): Promise<void> => {
+    setSaveFailed(false)
+    setBusy(prev => new Set(prev).add(field))
+    try {
+      if (!await form.set(field, next)) setSaveFailed(true)
+    } finally {
+      setBusy(prev => { const rest = new Set(prev); rest.delete(field); return rest })
+    }
   }
 
   // SandboxDefaults is a single field; each mode row edits a sub-key.
   const setSandboxMode = (mode: 'request' | 'auto-edit' | 'smart' | 'yolo', sandboxMode: string): void => {
-    void scope.set('sandboxDefaults', { ...value.sandboxDefaults, [mode]: sandboxMode })
+    void commitField('sandboxDefaults', { ...value.sandboxDefaults, [mode]: sandboxMode })
   }
 
   // askReason is a free-form textarea. Live committing on every keystroke
-  // round-trips through the settings scope and snaps the caret to the end
+  // round-trips through the settings form and snaps the caret to the end
   // mid-typing; hold the typed text in local state and commit on blur so
   // the caret stays where the user put it.
   const [askReasonText, setAskReasonText] = useState(value.askReason)
   useEffect(() => { setAskReasonText(value.askReason) }, [value.askReason])
   const commitAskReason = (next: string): void => {
-    if (next !== value.askReason) { void scope.set('askReason', next) }
+    if (next !== value.askReason) { void commitField('askReason', next) }
+  }
+
+  // smartProvider/smartModel are single-line inputs. Same live-commit hazard
+  // as askReason above: committing on every keystroke round-trips through the
+  // settings form and snaps the caret to the end mid-typing (fast typing can
+  // even drop characters). Hold each draft locally and commit on blur.
+  const [smartProviderText, setSmartProviderText] = useState(value.smartProvider ?? '')
+  useEffect(() => { setSmartProviderText(value.smartProvider ?? '') }, [value.smartProvider])
+  const commitSmartProvider = (next: string): void => {
+    const normalized = next === '' ? null : next
+    if (normalized !== value.smartProvider) { void commitField('smartProvider', normalized) }
+  }
+  const [smartModelText, setSmartModelText] = useState(value.smartModel ?? '')
+  useEffect(() => { setSmartModelText(value.smartModel ?? '') }, [value.smartModel])
+  const commitSmartModel = (next: string): void => {
+    const normalized = next === '' ? null : next
+    if (normalized !== value.smartModel) { void commitField('smartModel', normalized) }
   }
 
   return (
     <div className={css.section}>
       <h2 className={css.title}>{t('nav.label')}</h2>
       <p className={css.intro}>{t('intro')}</p>
+      {saveFailed && (
+        <p className={css.saveError} role="alert">{t('save.conflict')}</p>
+      )}
 
       {/* ── Tool family classification ────────────────────────────────── */}
       <div className={css.subSection}>
@@ -240,7 +290,8 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.editTools}
-              onChange={(v) => { void scope.set('editTools', v) }}
+              disabled={busy.has('editTools')}
+              onChange={(v) => { void commitField('editTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -254,7 +305,8 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.shellTools}
-              onChange={(v) => { void scope.set('shellTools', v) }}
+              disabled={busy.has('shellTools')}
+              onChange={(v) => { void commitField('shellTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -268,7 +320,8 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.readOnlyTools}
-              onChange={(v) => { void scope.set('readOnlyTools', v) }}
+              disabled={busy.has('readOnlyTools')}
+              onChange={(v) => { void commitField('readOnlyTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -282,7 +335,8 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
           >
             <CsvInput
               value={value.autoAllowTools}
-              onChange={(v) => { void scope.set('autoAllowTools', v) }}
+              disabled={busy.has('autoAllowTools')}
+              onChange={(v) => { void commitField('autoAllowTools', v) }}
               placeholder={t('csv.placeholder')}
             />
           </FieldShell>
@@ -383,13 +437,12 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
             resetLabel={t('reset.label')}
           >
             <Input
-              value={value.smartProvider ?? ''}
+              value={smartProviderText}
               placeholder={t('smartClassifier.provider.placeholder')}
               className={css.csvInput}
-              onChange={(e) => {
-                const next = e.target.value
-                void scope.set('smartProvider', next === '' ? null : next)
-              }}
+              disabled={busy.has('smartProvider')}
+              onChange={(e) => { setSmartProviderText(e.target.value) }}
+              onBlur={(e) => { commitSmartProvider(e.target.value) }}
             />
           </FieldShell>
           <FieldShell
@@ -400,13 +453,12 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
             resetLabel={t('reset.label')}
           >
             <Input
-              value={value.smartModel ?? ''}
+              value={smartModelText}
               placeholder={t('smartClassifier.model.placeholder')}
               className={css.csvInput}
-              onChange={(e) => {
-                const next = e.target.value
-                void scope.set('smartModel', next === '' ? null : next)
-              }}
+              disabled={busy.has('smartModel')}
+              onChange={(e) => { setSmartModelText(e.target.value) }}
+              onBlur={(e) => { commitSmartModel(e.target.value) }}
             />
           </FieldShell>
         </div>
@@ -427,6 +479,7 @@ export function ApprovalModeSettings({ scope, t }: ApprovalModeSettingsProps) {
               value={askReasonText}
               placeholder={t('askReason.placeholder')}
               className={css.textarea}
+              disabled={busy.has('askReason')}
               onChange={(e) => { setAskReasonText(e.target.value) }}
               onBlur={(e) => { commitAskReason(e.target.value) }}
             />

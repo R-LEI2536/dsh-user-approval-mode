@@ -76,8 +76,19 @@ Template string for the approval dialog reason text. Supports `{tool}` / `{mode}
 **Default mode** (deployer-only):
 The approval mode assigned to a new session when no override exists. Configured in `cordis.yml` entry config (field `default`); not exposed in the user settings page.
 
-**Settings namespace `approval-mode`**:
-The namespace that owns the user-editable fields (six tool-family / sandbox / dialog knobs plus three smart fields: `smartProvider`, `smartModel`, `sandboxDefaults.smart`) and the deployer-only fields (`default`, `unclassified`, `smartExtraDangerPatterns`, `smartDangerPatterns`, `smartSessionMemory`, `smartSessionMemoryTtlMs`, `smartTimeoutMs`, `smartClassifierPrompt`). Resolution order: schema defaults → cordis `base` → user layer. User overrides (where applicable) apply live (no restart).
+**Settings namespace `dsh-user-approval-mode`**:
+The profile entry id under which the user-editable fields live: the eight
+`Volatile`-wrapped Config fields (`editTools`, `shellTools`,
+`readOnlyTools`, `autoAllowTools`, `sandboxDefaults`, `askReason`,
+`smartProvider`, `smartModel`) plus the deployer-only plain fields
+(`default`, `unclassified`, `smartExtraDangerPatterns`,
+`smartDangerPatterns`, `smartSessionMemory`, `smartSessionMemoryTtlMs`,
+`smartTimeoutMs`, `smartClassifierPrompt`). User edits persist to the
+profile's `cordis.patch.yml` user layer and apply live (no restart).
+Resolution order: schema defaults → cordis `base` (deployer's
+cordis.yml/patch) → user layer. The client binds it via
+`ctx.configForms.get`; the settings-page slot id is `approval-mode`
+(distinct from the entry id).
 
 **Tool classification order**:
 The full priority chain at the gate: `autoAllowTools` first, then `editTools`, then `shellTools`, then `readOnlyTools`, then `unclassified` strategy.
@@ -85,4 +96,4 @@ The full priority chain at the gate: `autoAllowTools` first, then `editTools`, t
 ## Settings UI surface
 
 **Settings section (slot)**:
-The DSH slot `settings.section` is occupied by this plugin. The page id is `approval-mode`, displayed under the user's locale text "Approval Modes" / "审批模式". Lives in the sidebar between the General and Plugins sections.
+The DSH slot `settings.section` is occupied by this plugin. The page slot id is `approval-mode`, displayed under the user's locale text "Approval Modes" / "审批模式". Lives in the sidebar between the General and Plugins sections. The page binds the entry's configuration form (`ctx.configForms.get<Config>('dsh-user-approval-mode')`) — DSH 0.1.7 replaced `settingsScope`/`installSection` with volatile Config fields plus `configForms`.

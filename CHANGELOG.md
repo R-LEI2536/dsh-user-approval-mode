@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-28
+
+### Changed
+
+- **Adapt to DSH 0.1.7-rc.1** — bump every `@deepseek-ai/dsh-*`
+  peer/devDep range from `^0.1.5-rc.1` to `^0.1.7-rc.1`, cordis to
+  `>=4.0.4`, schemastery to `>=3.18.4` (`.volatile()` ships in 3.18.4,
+  the `Volatile` type in cordis 4.0.4).
+
+- **Settings move into the profile plugin Config (DSH 0.1.7-J1-04)** —
+  `ctx.settings.installSection` is gone. The plugin entry now declares
+  the eight user-editable fields (`editTools` / `shellTools` /
+  `readOnlyTools` / `autoAllowTools` / `sandboxDefaults` / `askReason` /
+  `smartProvider` / `smartModel`) as `.volatile()` schema fields; user
+  edits persist to the profile `cordis.patch.yml` user layer and apply
+  live. The remaining eight fields (`default`, `unclassified`, the five
+  `smart*` deployer knobs, `smartClassifierPrompt`) stay deployer-only
+  plain values. `apply(ctx, config: VolatileConfig)` reads live
+  `Volatile<T>` references through a per-call thunk (every decision call
+  site unchanged) and declares its own settings presentation via
+  `ctx.settings.configure({ auto: false })`. The new settings namespace
+  is the profile entry id `dsh-user-approval-mode`; the settings-page
+  slot id stays `approval-mode`.
+
+- **Client settings transport renamed `settingsScope` → `configForms`
+  (DSH 0.1.7-J1-27)** — `src/client/index.ts` injects `configForms`
+  (dropping `settingsScope`/`settingsSchema`) and binds
+  `ctx.configForms.get<Config>('dsh-user-approval-mode')`. The page
+  component consumes `ConfigForm<Config>` (`set`/`unset` now return
+  `Promise<boolean>`, same call shape).
+
+- **Icon rename (DSH 0.1.7-J1-26)** — `IconChevronDownOutline14` →
+  `IconChevronDownOutlineRegular` in both the composer chip
+  (`ApprovalModeChip.tsx`) and the settings page
+  (`ApprovalModeSettings.tsx`).
+
+### Notes for next upgrade
+
+- **Real-host verification still manual** — this checkout validates with
+  typecheck / test / build against the 0.1.7-rc.* packages. Cold start on
+  the actual host (its checkout is still 0.1.5-rc.2) and a settings save
+  landing in the profile `cordis.patch.yml` user layer remain to be
+  verified live.
+
 ## [0.5.0] - 2026-09-11
 
 ### Changed

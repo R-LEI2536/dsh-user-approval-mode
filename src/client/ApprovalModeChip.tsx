@@ -3,7 +3,7 @@
  */
 import { useState, useEffect } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import { Menu, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ApprovalMode } from '../index'
 import type { ApprovalKey } from './locales'
 import css from './ApprovalModeChip.module.css'
@@ -99,7 +99,7 @@ export function ApprovalModeChip({ cachedMode, switchMode, getDefaultMode, t }: 
           >
             <span className={css.label}>{t('label')}</span>
             <span className={css.mode}>{t(`mode.${currentMode}` as ApprovalKey)}</span>
-            <IconChevronDownOutline14 className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+            <IconChevronDownOutlineRegular className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
           </button>
         )}
       />

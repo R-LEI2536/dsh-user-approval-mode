@@ -315,7 +315,7 @@ so styling or coloring parts of the template has no effect.
 ## Settings Page
 
 Open the Web UI sidebar → **Settings** → **Approval Modes** (last item, after
-Plugins) to edit the six user-facing Config fields. The page header has a
+Plugins) to edit the eight user-facing Config fields. The page header has a
 short title and an intro paragraph; the page body is divided into three
 sub-sections:
 
@@ -328,10 +328,10 @@ sub-sections:
    locales (the values are technical identifiers shared with the schema).
 3. **Approval prompt** — multi-line `askReason` template
 
-The two remaining Config fields — `default` and `unclassified` — are
-deliberately **deployer-only**: they live in `cordis.yml` entry config and
-are not exposed in the settings page. The runtime falls back to the cordis
-`base` for them.
+The remaining Config fields — `default`, `unclassified`, and the six
+`smart*` deployer knobs — are deliberately **deployer-only**: they live in
+the deployer's cordis config and are not exposed in the settings page. The
+runtime falls back to the cordis `base` for them.
 
 Each field is rendered in the DSH settings-panel design language: the
 label sits on a row with a small text **Reset** on the right, the control
@@ -350,16 +350,18 @@ and dark themes.
 
 ### Layering model
 
-The settings namespace `approval-mode` resolves a value through three
-layers:
+The user-editable fields are declared as `.volatile()` on the plugin entry's
+schema. The resolved value goes through three layers:
 
 ```
-schema defaults  →  cordis `base` (deployer's cordis.yml)  →  user override
+schema defaults  →  cordis `base` (deployer's cordis config)  →  user override
 ```
 
-When the user has not touched a field, the value is the deployer's cordis
-config. When the user has edited a field, their value wins. Reset clears
-the user override (so the deployer's base re-emerges).
+User overrides persist to the profile `cordis.patch.yml` user layer under the
+entry id `dsh-user-approval-mode` and are applied live by the runtime. When
+the user has not touched a field, the value is the deployer's cordis config.
+When the user has edited a field, their value wins. Reset clears the user
+override (so the deployer's base re-emerges).
 
 ### What the user can edit
 
@@ -387,9 +389,9 @@ Deployer-only (not shown in the page; set in `cordis.yml`):
 
 ### Effect timing
 
-The six user-editable fields are **live** — they take effect on the next
+The eight user-editable fields are **live** — they take effect on the next
 `tools/pre-execute` invocation, no DSH restart required. The runtime gate
-re-reads the settings scope on every tool call.
+re-reads the live volatile Config on every tool call.
 
 ### Overlap between family lists
 
@@ -513,7 +515,7 @@ The plugin automatically classifies tools into four families:
 - `@deepseek-ai/dsh-client-runtime`: Client context and runtime services
 - `@deepseek-ai/dsh-client-locale`: Locale registry
 - `@deepseek-ai/dsh-client-ui-conversation`: Composer slot (`conversation.input.left`)
-- `@deepseek-ai/dsh-client-ui-settings`: Settings slot (`settings.section`) + scope service
+- `@deepseek-ai/dsh-client-ui-settings`: Settings slot (`settings.section`) + configuration forms (`configForms`)
 - `@deepseek-ai/dsh-client-ui-primitives`: Button / Input / Menu primitives
 - `@deepseek-ai/dsh-client-ui-slots`: Slot registry
 - `@deepseek-ai/schemastery`: Configuration schema validation

@@ -3,12 +3,12 @@
  *   - registers the approval mode chip in the composer tool row
  *   - registers an "Approval Modes" page in the Web UI settings sidebar
  *
- * Both registrations bind against the `approval-mode` settings namespace; the
+ * Both registrations bind against the plugin entry's volatile Config: the
  * chip routes through `/approval-mode` slash command (per-session mode switch),
- * while the settings page binds the user-editable section (six of the eight
- * Config fields — `default` and `unclassified` stay deployer-only). Settings
- * writes flow through the settings RPC back to the server plugin's
- * `ctx.settings.installSection` registration.
+ * while the settings page binds the user-editable section (8 of the 16
+ * Config fields — the rest stay deployer-only). Settings writes flow through
+ * the configForms RPC back to the Host, whose runtime folds them into the
+ * entry's profile user layer and updates the live volatile references.
  */
 // DSH 0.1.2-alpha.3 把 dsh-client-runtime 重命名为 dsh-client-modules，
 // ClientContext 收敛到 cordis 的 Context、SessionId 拆到 dsh-session/types。
@@ -52,13 +52,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'dsh-user-approval-mode'
 /** Dictionary namespace owned by the settings page. */
 const NS_PAGE = 'dsh-user-approval-mode-page'
-/** Settings slot id (matches the server-side namespace key for routing). */
+/** Settings slot id (page key in the settings sidebar; distinct from the profile entry id). */
 const SETTINGS_ID = 'approval-mode'
+/** Profile entry id = settings namespace key (`cordis.patch.yml` `id:`). */
+const ENTRY_ID = 'dsh-user-approval-mode'
 /** Settings slot order: bottom of the sidebar, after the Plugins section. */
 const SETTINGS_ORDER = 1100
 
-/** Required services: slot registry, commands Remote, locale registry, settings scope, settings schema service. */
-export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'settingsScope', 'settingsSchema']
+/** Required services: slot registry, commands Remote, locale registry, configuration forms. */
+export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'configForms']
 
 /**
  * Per-session mode cache for the chip. Survives chip unmount/remount on session
@@ -135,12 +137,13 @@ export function apply(ctx: ClientContext): void {
     }),
   }, ApprovalModeChip))
 
-  // ── Settings page (full-page editor for the six user-editable fields) ──
+  // ── Settings page (full-page editor for the eight user-editable fields) ──
   // The page lives at the bottom of the sidebar (`order: 1100`, after the
-  // Plugins section). It binds the same `approval-mode` settings namespace
-  // that the server plugin's `ctx.settings.installSection` exposed; user edits go
-  // through `scope.set`/`scope.unset` and are persisted to the settings document.
-  // `default` and `unclassified` remain in the schema but are not editable here.
+  // Plugins section). It binds the plugin entry's volatile Config via
+  // `configForms.get`; user edits go through `form.set`/`form.unset` and are
+  // persisted to the profile `cordis.patch.yml` user layer, where the Host
+  // runtime folds them into the live volatile references.
+  // The other 8 Config fields remain in the schema but are not editable here.
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: SETTINGS_ID,
@@ -148,10 +151,10 @@ export function apply(ctx: ClientContext): void {
     label: () => tPage('nav.label'),
     locale: NS_PAGE,
     inject: (): ApprovalModeSettingsInjected => ({
-      // Bind the scope on the caller's plugin lifecycle — the scope's disposer
-      // is owned by this plugin's fiber. Binding adds no wire read of its own
-      // because settings reads ride the shared describe mirror.
-      scope: ctx.settingsScope.bind<Config>({ namespace: SETTINGS_ID }),
+      // Bind the configuration form on the caller's plugin lifecycle — the
+      // form's disposer is owned by this plugin's fiber. Binding adds no wire
+      // read of its own because settings reads ride the shared describe mirror.
+      form: ctx.configForms.get<Config>(ENTRY_ID),
     }),
   }, ApprovalModeSettings))
 }
