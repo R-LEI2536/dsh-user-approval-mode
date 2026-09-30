@@ -143,7 +143,7 @@ export interface VolatileConfig {
   smartClassifierPrompt: string
 }
 
-export const Config: Schema<Config> = Schema.object({
+export const Config: Schema<Config, VolatileConfig> = Schema.object({
   default: Schema.union([...APPROVAL_MODES] as ApprovalMode[])
     .default('off')
     .description('The approval mode assigned to new sessions. Each session can still be switched at runtime via the composer chip.'),

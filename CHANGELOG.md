@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Bump `@rh854lkjd/dsh-tool-list-dir` floor to `>=0.2.6`** — 0.2.6
+  tightens its peerDependencies to the DSH 0.1.7 era (`cordis ~4.0.4`,
+  `dsh-fs`/`dsh-tools`/`dsh-system-prompt ^0.1.7-rc.1`, `schemastery
+  ~3.18.4`), matching this plugin's 0.1.7-rc.* peers and clearing the
+  old `dsh-fs@0.0.1-rc.1` transitive peer warning noted in 0.5.0. The
+  peer bump also normalizes the tree's schemastery to 3.18.4, the
+  version this repo always declared (`>=3.18.4`), which surfaced the
+  annotation fix below.
+
+### Fixed
+
+- **Annotate the plugin Config schema as `Schema<Config, VolatileConfig>`**
+  — under schemastery 3.18.4 the schema's inferred type carries
+  `Volatile<T>` through `meta.default`, so the previous
+  `Schema<Config>` annotation stopped compiling (input side still
+  matches `Config`; the volatile chain makes the validated output
+  `VolatileConfig`). Emitted `lib/index.d.ts` stays portable — it no
+  longer needs to reference the undeclared `cosmokit` types.
+
 ## [0.6.0] - 2026-09-28
 
 ### Changed
