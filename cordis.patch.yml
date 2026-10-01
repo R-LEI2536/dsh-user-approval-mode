@@ -6,8 +6,8 @@
         default: off
         editTools: ['write', 'edit', 'str_replace_editor']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
-        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write']
-        autoAllowTools: ['ask_user_question', 'exit_plan_mode']
+        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']
+        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']
         unclassified: ask
         sandboxDefaults:
           request: workspace-write

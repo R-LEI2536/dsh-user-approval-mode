@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Widen the bundled default tool lists** — the plugin's bundle patch
+  (`cordis.patch.yml`) now defaults `readOnlyTools` to
+  `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']`
+  (adds `reme_search`, `list_agents`) and `autoAllowTools` to
+  `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']`
+  (adds `job_output`, `skill`, `subagent`), so read-only browsing and
+  control-plane tools stop raising approval prompts under the shipped
+  deployment. The **schema defaults in `src/index.ts` are deliberately left
+  unchanged**: they remain the narrower fallback for a deployment that
+  inserts the plugin without the bundle patch, so the two layers differ by
+  design rather than by accident (contrast the drift fixed in 0.2.0).
+  README.md and README.zh.md now attribute the lists to the bundle layer and
+  spell out which layer a manual `insert` resolves to.
+
 - **Bump `@rh854lkjd/dsh-tool-list-dir` floor to `>=0.2.6`** — 0.2.6
   tightens its peerDependencies to the DSH 0.1.7 era (`cordis ~4.0.4`,
   `dsh-fs`/`dsh-tools`/`dsh-system-prompt ^0.1.7-rc.1`, `schemastery
