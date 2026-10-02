@@ -7,7 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-02
+
 ### Changed
+
+- **Adapt to DSH 0.2.0-rc.1+** — every `@deepseek-ai/dsh-*` peer and
+  devDependency range moves from `^0.1.7-rc.1` to `^0.2.0-rc.1` (15 + 15
+  entries) and `pnpm-lock.yaml` is re-resolved onto the `0.2.0-rc.2`
+  packages. **No source change was needed**: between `dsh-v0.1.7-rc.2` and
+  `dsh-v0.2.0-rc.2` every consumed package is either byte-identical in
+  `src/**` (`settings`, `commands`, `tools`, `permission-presets`,
+  `ui-slots`, `ui-settings`, `ui-session`, `locale`, `llm`, `agent`,
+  `agent-default-model`, `shell`, `system-prompt`, `fs`) or changed
+  additively / by relaxing types only (`ui-primitives` turns `Input` into a
+  `forwardRef` with unchanged props, `ui-conversation` and `api/remotes` and
+  `core/session` only add exports, `ui-renderer` fixes one hook order).
+  `cordis` (`>=4.0.4`) and `schemastery` (`>=3.18.4`) are deliberately left
+  alone: the compatibility gate skips any name outside `@deepseek-ai/dsh*`,
+  and both libraries are unchanged across the corridor.
+  The range is deliberately `^0.2.0-rc.1` and not `^0.2.0` / `~0.2.0`:
+  those ranges exclude prereleases and are rejected **today**, while
+  `^0.2.0-rc.1` also accepts the eventual `0.2.0` and later patches.
+  Two consequences worth knowing: this package is a **bundle**
+  (`dsh.bundle.patch`), so a host whose gate rejects the peers skips the
+  whole bundle (`dsh: skipping profile bundle "dsh-user-approval-mode"`)
+  rather than a single row; and `^0.2.0-rc.1` does not admit `0.1.7`, so
+  publishing this plugin and moving the host to 0.2.0 must happen in the
+  same batch (stay on 0.6.0 for a 0.1.7 host).
+  Live verification against a real 0.2.0-rc.2 host (install gate, cold
+  start, Web UI, settings round-trip) is deferred to that host-upgrade
+  round; 0.7.0 is verified statically instead — `pnpm typecheck`,
+  `pnpm test` (83 passing) and `pnpm build`, plus an artifact comparison
+  against a build made with the 0.1.7 dependencies: 42 of the 43 files in
+  `lib/` are byte-identical, and the sole difference is the client bundle's
+  CSS-module class map, whose `[hash]` prefix tracks the build directory
+  path and whose key order is unstable between runs — neither depends on
+  the DSH version.
 
 - **Widen the bundled default tool lists** — the plugin's bundle patch
   (`cordis.patch.yml`) now defaults `readOnlyTools` to

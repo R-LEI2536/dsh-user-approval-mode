@@ -97,3 +97,7 @@ The full priority chain at the gate: `autoAllowTools` first, then `editTools`, t
 
 **Settings section (slot)**:
 The DSH slot `settings.section` is occupied by this plugin. The page slot id is `approval-mode`, displayed under the user's locale text "Approval Modes" / "审批模式". Lives in the sidebar between the General and Plugins sections. The page binds the entry's configuration form (`ctx.configForms.get<Config>('dsh-user-approval-mode')`) — DSH 0.1.7 replaced `settingsScope`/`installSection` with volatile Config fields plus `configForms`.
+
+## DSH dependency line
+
+Peer and dev ranges target the DSH `0.2.0-rc.1+` line (`^0.2.0-rc.1`; 15 peers plus the same 15 as devDependencies). `cordis` and `schemastery` deliberately stay on `>=4.0.4` / `>=3.18.4`: the host's compatibility gate only judges names matching `@deepseek-ai/dsh*`, and both libraries are unchanged across the 0.1.7 → 0.2.0 corridor. This package is a **bundle** (`dsh.bundle.patch`), so a gate rejection skips the entire bundle rather than one row. `0.6.0` is the last release for the DSH `0.1.7` line; the range does not admit `0.1.7`, so plugin and host must move together.
