@@ -5,7 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.1] - 2026-10-03
+
+### Changed
+
+- **Bump `@rh854lkjd/dsh-tool-list-dir` floor to `>=0.2.7` and drop the
+  `dsh-system-prompt: 0.1.1-rc.2` override** — closes the dependency
+  residue tracked in the 0.2.0-rc.2 audit (`docs/2026-10-02-dsh-v0-2-0-rc-2-compatibility-audit.md`
+  §六/§九): list-dir 0.2.7 raises its own peers to the DSH 0.2.0-rc line
+  (`dsh-fs`/`dsh-tools`/`dsh-system-prompt ^0.2.0-rc.1`, `cordis ~4.0.4`,
+  `schemastery ~3.18.4`), so `pnpm-lock.yaml` now links all of them to the
+  `0.2.0-rc.2` tree with no `0.1.1-rc.2` residue and no `overrides:` block;
+  the workspace override's 0.1.x-era rationale is obsolete. Caveat: while
+  list-dir's `dsh-fs ^0.2.0-rc.1` peer is satisfied in the tree, pnpm 11.7
+  still links its auto-installed peer instance to the old `dsh-fs@0.0.1-rc.1`
+  cohort (same value as the accepted 0.2.6 residue — re-confirmed after
+  `--force` and a from-scratch reinstall); `pnpm peers check` flags it as
+  unmet, but install, typecheck, test and build all pass and the DSH
+  compatibility gate only reads this plugin's own `@deepseek-ai/dsh-*`
+  peers, which are all `^0.2.0-rc.1` and satisfied.
 
 ## [0.7.0] - 2026-10-02
 

@@ -116,6 +116,8 @@
 
 本轮已按用户决定"只抬 peer，下限保持 `>=0.2.6`"。彻底清理需要文档 §2.6 的下一步：`tool-list-dir` 发 0.2.7 抬到 `^0.2.0-rc.1`，本仓下限随之抬到 `>=0.2.7`；同时重估 `dsh-system-prompt` override（其理由"故意压 0.1.1-rc.2"属 0.1.x 时代；已发布 `dsh-tools@0.2.0-rc.2` 的 peer 精确要求 `0.2.0-rc.2`）。**本轮未触发安装失败，故未改动 `pnpm-workspace.yaml`。**
 
+**后续批（0.2.7 批次，已执行）**：`tool-list-dir@0.2.7` 已发布并把 peer 抬到 `^0.2.0-rc.1`（`dsh-fs`/`dsh-tools`/`dsh-system-prompt ^0.2.0-rc.1`、`cordis ~4.0.4`、`schemastery ~3.18.4`）。本仓：`package.json` 下限 `>=0.2.6` → `>=0.2.7`；删除 `pnpm-workspace.yaml` 的 `dsh-system-prompt: 0.1.1-rc.2` override 及其 `pnpm-lock.yaml` `overrides:` 块；lock 重解后 `dsh-system-prompt` 全树 `0.2.0-rc.2`，无 `0.1.1-rc.2` 残留。**残留一项未消除**：list-dir 0.2.7 的 `dsh-fs ^0.2.0-rc.1` peer 在树内仍链接陈旧的 `dsh-fs@0.0.1-rc.1`（`--force` 与全新重装均复现；`pnpm peers check` 报 unmet，但安装/typecheck/test/build 均过，DSH 兼容门只读本插件自己的 `@deepseek-ai/dsh-*` peers，不受影响）。
+
 ---
 
 ## 七、推迟的实机验证清单（宿主升到 0.2.0-rc.2 那一轮执行）
@@ -145,5 +147,5 @@
 
 - 未发布、未打 tag、未合并 main；主机 checkout 与运行中 3080 宿主未升级。
 - fleet 其余 5 仓（reject-policy、reme-auto-router、reme-support、more-agent-presets、tool-list-dir）未动；`want-a-init-fork` 跨两跳，单独排期。
-- L2–L5 实机验证推迟（见第七节）；第六节的依赖残留需与 tool-list-dir 0.2.7 同批解决。
+- L2–L5 实机验证推迟（见第七节）；第六节的依赖残留需与 tool-list-dir 0.2.7 同批解决。**0.2.7 批次已执行**：下限抬到 `>=0.2.7`、删除 `dsh-system-prompt` override、lock 重解（`dsh-system-prompt` 全树 `0.2.0-rc.2`）；唯 `dsh-fs` 陈旧 cohort 仍在（pnpm 11.7 对 list-dir 0.2.7 的 peer 重选无效，`--force` 与全新重装均复现），待上游或 pnpm 行为变化后清理。
 - 给舰队文档 `DSH-0.2.0-UPGRADE-PLAN.md` 的三条修正（该文档在本仓之外，需文档属主更新）：① §2.1 对本仓的失败模式应写"整包 skip"而非"禁用某一行"；② §2.1/§3 未提 `pnpm-workspace.yaml` 的 `dsh-system-prompt` override 与 `tool-list-dir@0.2.6` 的 0.1.7 era peers 会共同制造混合 cohort；③ §0.5/§2.1 的"src 零改动"对本仓成立，且本轮 registry 可用。

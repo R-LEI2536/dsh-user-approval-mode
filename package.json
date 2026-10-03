@@ -1,6 +1,6 @@
 {
   "name": "dsh-user-approval-mode",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "User approval modes plugin for DeepSeek Harness",
   "type": "module",
   "main": "lib/index.js",
@@ -26,7 +26,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@rh854lkjd/dsh-tool-list-dir": ">=0.2.6",
+    "@rh854lkjd/dsh-tool-list-dir": ">=0.2.7",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
