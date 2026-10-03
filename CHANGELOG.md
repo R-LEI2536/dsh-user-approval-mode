@@ -5,9 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.1] - 2026-10-03
 
 ### Changed
+
+- **Bump `@rh854lkjd/dsh-tool-list-dir` floor to `>=0.2.7` and drop the
+  `dsh-system-prompt: 0.1.1-rc.2` override** — closes the dependency
+  residue tracked in the 0.2.0-rc.2 audit (`docs/2026-10-02-dsh-v0-2-0-rc-2-compatibility-audit.md`
+  §六/§九): list-dir 0.2.7 raises its own peers to the DSH 0.2.0-rc line
+  (`dsh-fs`/`dsh-tools`/`dsh-system-prompt ^0.2.0-rc.1`, `cordis ~4.0.4`,
+  `schemastery ~3.18.4`), so `pnpm-lock.yaml` now links all of them to the
+  `0.2.0-rc.2` tree with no `0.1.1-rc.2` residue and no `overrides:` block;
+  the workspace override's 0.1.x-era rationale is obsolete. Caveat: while
+  list-dir's `dsh-fs ^0.2.0-rc.1` peer is satisfied in the tree, pnpm 11.7
+  still links its auto-installed peer instance to the old `dsh-fs@0.0.1-rc.1`
+  cohort (same value as the accepted 0.2.6 residue — re-confirmed after
+  `--force` and a from-scratch reinstall); `pnpm peers check` flags it as
+  unmet, but install, typecheck, test and build all pass and the DSH
+  compatibility gate only reads this plugin's own `@deepseek-ai/dsh-*`
+  peers, which are all `^0.2.0-rc.1` and satisfied.
+
+## [0.7.0] - 2026-10-02
+
+### Changed
+
+- **Adapt to DSH 0.2.0-rc.1+** — every `@deepseek-ai/dsh-*` peer and
+  devDependency range moves from `^0.1.7-rc.1` to `^0.2.0-rc.1` (15 + 15
+  entries) and `pnpm-lock.yaml` is re-resolved onto the `0.2.0-rc.2`
+  packages. **No source change was needed**: between `dsh-v0.1.7-rc.2` and
+  `dsh-v0.2.0-rc.2` every consumed package is either byte-identical in
+  `src/**` (`settings`, `commands`, `tools`, `permission-presets`,
+  `ui-slots`, `ui-settings`, `ui-session`, `locale`, `llm`, `agent`,
+  `agent-default-model`, `shell`, `system-prompt`, `fs`) or changed
+  additively / by relaxing types only (`ui-primitives` turns `Input` into a
+  `forwardRef` with unchanged props, `ui-conversation` and `api/remotes` and
+  `core/session` only add exports, `ui-renderer` fixes one hook order).
+  `cordis` (`>=4.0.4`) and `schemastery` (`>=3.18.4`) are deliberately left
+  alone: the compatibility gate skips any name outside `@deepseek-ai/dsh*`,
+  and both libraries are unchanged across the corridor.
+  The range is deliberately `^0.2.0-rc.1` and not `^0.2.0` / `~0.2.0`:
+  those ranges exclude prereleases and are rejected **today**, while
+  `^0.2.0-rc.1` also accepts the eventual `0.2.0` and later patches.
+  Two consequences worth knowing: this package is a **bundle**
+  (`dsh.bundle.patch`), so a host whose gate rejects the peers skips the
+  whole bundle (`dsh: skipping profile bundle "dsh-user-approval-mode"`)
+  rather than a single row; and `^0.2.0-rc.1` does not admit `0.1.7`, so
+  publishing this plugin and moving the host to 0.2.0 must happen in the
+  same batch (stay on 0.6.0 for a 0.1.7 host).
+  Live verification against a real 0.2.0-rc.2 host (install gate, cold
+  start, Web UI, settings round-trip) is deferred to that host-upgrade
+  round; 0.7.0 is verified statically instead — `pnpm typecheck`,
+  `pnpm test` (83 passing) and `pnpm build`, plus an artifact comparison
+  against a build made with the 0.1.7 dependencies: 42 of the 43 files in
+  `lib/` are byte-identical, and the sole difference is the client bundle's
+  CSS-module class map, whose `[hash]` prefix tracks the build directory
+  path and whose key order is unstable between runs — neither depends on
+  the DSH version.
 
 - **Widen the bundled default tool lists** — the plugin's bundle patch
   (`cordis.patch.yml`) now defaults `readOnlyTools` to

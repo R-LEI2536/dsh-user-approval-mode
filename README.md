@@ -147,6 +147,30 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 
 ### DSH Version Compatibility
 
+**v0.7.0+ requires DSH ≥ 0.2.0-rc.1**:
+
+Every `@deepseek-ai/dsh-*` peer range moves to `^0.2.0-rc.1` (and the
+devDependencies move with it). No source change was needed: between DSH
+`0.1.7-rc.2` and `0.2.0-rc.2` every package this plugin consumes is either
+unchanged or changed additively. Three things are worth knowing first:
+
+- **This package is a bundle** (`dsh.bundle.patch`). If the host's plugin
+  compatibility gate rejects its peers, the host skips the **whole bundle**
+  (`dsh: skipping profile bundle "dsh-user-approval-mode"`) — the mode chip
+  and the Approval Modes settings page disappear together, instead of a
+  single row being disabled.
+- **Ship it together with the host.** `^0.2.0-rc.1` excludes `0.1.7`, so a
+  plugin published with this range is rejected by a 0.1.7 host. Stay on
+  plugin `0.6.0` while the host is on the 0.1.7 line.
+- **Do not write `^0.2.0` or `~0.2.0`** in your own manifests: those ranges
+  exclude prereleases and are rejected right now, even though `0.2.0-rc.2`
+  exists. `^0.2.0-rc.1` admits `0.2.0-rc.*` today and `0.2.0` / `0.2.x`
+  later.
+
+Live verification against a real 0.2.0-rc host (install gate, cold start,
+Web UI) is deferred to that host-upgrade round; 0.7.0 is verified statically
+(`pnpm typecheck`, 83 tests, `pnpm build`).
+
 **v0.3.0+ requires DSH ≥ 0.1.2-alpha.3**:
 
 The plugin v0.3.0 was migrated to the DSH 0.1.2-alpha.3 API surface and no longer works on earlier DSH lines:
