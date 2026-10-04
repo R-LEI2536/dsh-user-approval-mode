@@ -21,6 +21,7 @@ import { Menu, Input, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-cli
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Config } from '../index'
 import type { ApprovalPageKey } from './locales'
+import { formatToolList, parseToolList, sameToolList } from './tool-list'
 import css from './ApprovalModeSettings.module.css'
 
 // ─── Slot contract types ────────────────────────────────────────────────────
@@ -157,42 +158,48 @@ interface CsvInputProps {
   disabled?: boolean
 }
 
-/** Element-wise list equality for the commit no-op guard. */
-function sameList(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((entry, index) => entry === b[index])
-}
-
-/** Editable string[] as a single comma-separated text input. Treats the value
- *  as a set: on commit, splits on comma, trims each token, drops empties,
- *  and deduplicates (first occurrence wins).
+/** Editable string[] as a comma-separated textarea. Treats the value as a set:
+ *  on commit, splits on commas (or newlines, so a pasted list parses), trims
+ *  each token, drops empties, and deduplicates (first occurrence wins).
  *
- *  Commit happens on blur, NOT on every keystroke. Live committing would
- *  round-trip through the settings form on each character; the dedup/trim
- *  pass can change the string shape, which would reset the controlled input
- *  value and snap the caret to the end mid-typing. Holding the parsed
- *  result until blur keeps the cursor stable while the user edits. A blur
- *  whose parsed result equals the current value sends no write at all. */
+ *  Commit happens on blur or Enter, NOT on every keystroke. Live committing
+ *  would round-trip through the settings form on each character; the
+ *  dedup/trim pass can change the string shape, which would reset the
+ *  controlled value and snap the caret to the end mid-typing. Holding the
+ *  parsed result until commit keeps the cursor stable while the user edits. A
+ *  commit whose parsed result equals the current value sends no write at all.
+ *
+ *  The box is a textarea rather than an input so that a long tool list wraps
+ *  instead of scrolling sideways. Its height is pure CSS (`field-sizing:
+ *  content` under a max-height cap — see `.listInput`), so no measuring
+ *  effect is needed. */
 function CsvInput({ value, onChange, placeholder, disabled }: CsvInputProps) {
   // Local copy mirrors the value; resyncs only when the prop changes (e.g.,
   // an external reset or form update overrides the in-progress edit).
-  const [text, setText] = useState(value.join(', '))
-  useEffect(() => { setText(value.join(', ')) }, [value])
+  const [text, setText] = useState(formatToolList(value))
+  useEffect(() => { setText(formatToolList(value)) }, [value])
 
   const commit = (next: string): void => {
-    const parts = [...new Set(
-      next.split(',').map(s => s.trim()).filter(s => s.length > 0),
-    )]
-    if (!sameList(parts, value)) onChange(parts)
+    const parts = parseToolList(next)
+    if (!sameToolList(parts, value)) onChange(parts)
   }
 
   return (
-    <Input
+    <textarea
+      rows={1}
       value={text}
       placeholder={placeholder}
-      className={css.csvInput}
+      className={css.listInput}
       disabled={disabled}
       onChange={(e) => { setText(e.target.value) }}
       onBlur={(e) => { commit(e.target.value) }}
+      onKeyDown={(e) => {
+        // A list value holds no newlines, so Enter commits instead of breaking
+        // the line. Never intercept while an IME is composing.
+        if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+        e.preventDefault()
+        commit(text)
+      }}
     />
   )
 }

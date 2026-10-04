@@ -111,10 +111,49 @@
 }
 
 /* Width applied via className passed to the Input primitive (its root
-   element picks up this class). Tool family inputs stretch to fill the
-   card's content area instead of leaving empty space on the right. */
+   element picks up this class). The smart-classifier provider/model inputs
+   stretch to fill the card's content area instead of leaving empty space on
+   the right. */
 .csvInput {
   width: 100%;
+}
+
+/* Tool-family list. Skin matches this page's own .textarea (the approval
+   prompt box) so the two multi-line controls read as one family; the height
+   follows the host's own capped auto-growing pattern (ui-schedule's
+   TaskManagerPage .instruction, ui-message-feedback's FeedbackDialog .detail):
+   `field-sizing: content` grows the box with the value up to 134px (six
+   lines), where its own scrollbar takes over. Without `field-sizing` support
+   it rests at one line and scrolls vertically -- still no horizontal
+   scrolling, which is the point of the change. */
+.listInput {
+  box-sizing: border-box;
+  width: 100%;
+  /* 1 line = 20px line-height + 12px padding + 2px border. */
+  min-height: 34px;
+  /* 6 lines. */
+  max-height: 134px;
+  field-sizing: content;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: break-word;
+  overflow-y: auto;
+  resize: none;
+}
+
+.listInput::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.listInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 .hint {
