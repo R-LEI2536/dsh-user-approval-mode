@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Tool-family fields wrap instead of scrolling on one line** — the four
+  tool lists on the approval settings page were single-line inputs, so a
+  long list (the shipped profile carries ten entries in `readOnlyTools`
+  and ten in `autoAllowTools`) could only be read by scrolling inside the
+  box. They are now capped auto-growing textareas using the host's own
+  `field-sizing: content` pattern (as in ui-schedule's instruction box and
+  ui-message-feedback's detail field): the value wraps, the control grows
+  to six lines (134px) and then scrolls internally. The CSV wire format,
+  the blur-only commit, the trim/dedup pass, `Reset` and the refused-write
+  alert are all unchanged.
+
 ## [0.7.1] - 2026-10-03
 
 ### Changed
