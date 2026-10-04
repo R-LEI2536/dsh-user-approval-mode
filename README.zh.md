@@ -342,17 +342,18 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
       name: dsh-user-approval-mode
 ```
 
-以下值来自本包随附的 bundle patch（`cordis.patch.yml`）：
+以下就是插件的 schema 默认值（`src/index.ts`）；本包随附的 bundle patch
+（`cordis.patch.yml`）逐字重复同一份名单，所以"装 bundle"和"手动 insert"
+生效的行为完全一致：
 - `default`: `off`（默认禁用插件）
-- `editTools`: `['write', 'edit', 'str_replace_editor']`
+- `editTools`: `['write', 'edit', 'str_replace_editor', 'update_goal']`
 - `shellTools`: `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']`
-- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']`
-- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']`
+- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']`
+- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']`
 - `unclassified`: `ask`
 
-如果不走 bundle patch、直接在自己的 `cordis.yml` 里手动 insert 插件，生效的
-是 `src/index.ts` 里的 schema 兜底值——其中 `readOnlyTools` / `autoAllowTools`
-仍是旧的、更窄的那两份名单。
+默认值里带上较新的 Agent Teams / ReMe 工具名是安全的：host 没注册的工具名
+永远不会被匹配到。这四份名单由 `test/tool-family-defaults.test.ts` 钉住。
 
 ### 自定义配置
 
@@ -366,11 +367,11 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
         # 新会话的默认模式
         default: auto-edit
         
-        # 自定义工具分类
-        editTools: ['write', 'edit', 'str_replace_editor']
+        # 自定义工具分类（下面列的就是出厂默认值）
+        editTools: ['write', 'edit', 'str_replace_editor', 'update_goal']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
-        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']
-        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']
+        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']
+        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']
         
         # 未分类工具的策略：'ask'（更安全）或 'allow'（更快）
         unclassified: ask
@@ -397,19 +398,18 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | 选项 | 类型 | 默认值 | 描述 |
 |------|------|--------|------|
 | `default` | string | `off` | 新会话的默认审批模式。选项：`request`、`auto-edit`、`smart`、`yolo`、`off` |
-| `editTools` | string[] | `['write', 'edit', 'str_replace_editor']` | 分类为"编辑"族的工具（文件修改） |
+| `editTools` | string[] | `['write', 'edit', 'str_replace_editor', 'update_goal']` | 分类为"编辑"族的工具（文件修改） |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | 分类为"Shell"族的工具（命令执行） |
-| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']` | 分类为"只读"族的工具（始终允许） |
-| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']` | 始终绕过审批的工具 |
+| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | 分类为"只读"族的工具（始终允许） |
+| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | 始终绕过审批的工具 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
 | `askReason` | string | *见默认值* | 审批请求的自定义消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符 |
 | `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
 | `smartModel` | string \| null | `null` | smart 模式分类器的 LLM model（null = 继承 `agentDefaultModel`） |
 
-上表 `默认值` 列取自 bundle patch（`cordis.patch.yml`）。不走 bundle patch 的
-手动 insert 部署会回落到 `src/index.ts` 的 schema 默认值，其中
-`readOnlyTools` / `autoAllowTools` 仍是旧的、更窄的名单。
+上表 `默认值` 列就是插件的 schema 默认值（`src/index.ts`），随附的 bundle
+patch 逐字重复同一份名单——装 bundle 与手动 insert 的行为一致。
 
 ### 默认审批原因
 
@@ -423,9 +423,9 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
 
 | 族 | 默认工具 | 行为 |
 |------|---------|------|
-| **编辑** | `write`, `edit`, `str_replace_editor` | 文件修改工具 |
+| **编辑** | `write`, `edit`, `str_replace_editor`, `update_goal` | 文件修改工具 |
 | **Shell** | `bash`, `pwsh`, `tool:bash`, `tool:pwsh` | 命令执行工具 |
-| **只读** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents` | 安全浏览工具（始终允许） |
+| **只读** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents`, `job_list`, `get_goal` | 安全浏览工具（始终允许） |
 | **其他** | *所有其他工具* | 未分类工具，行为取决于 `unclassified` 配置 |
 
 ## 工作原理

@@ -87,13 +87,13 @@ const sessionModes = new WeakMap<Session, ApprovalMode>()
 export interface Config {
   /** 新会话的默认模式；`approval/mode` 事件缺席时即此值。默认 `off`。 */
   default?: ApprovalMode
-  /** 编辑族工具名（默认 write/edit/str_replace_editor）。 */
+  /** 编辑族工具名（默认 write/edit/str_replace_editor/update_goal）。 */
   editTools?: string[]
   /** shell 族工具名（默认 bash/pwsh 及原始变体）。 */
   shellTools?: string[]
-  /** 只读工具名（默认 read/glob/grep/read_image/list_directory/todo_write）；任何模式下免审。 */
+  /** 只读工具名（默认 read/glob/grep/read_image/list_directory/todo_write + reme_search/list_agents/job_list/get_goal）；任何模式下免审。 */
   readOnlyTools?: string[]
-  /** 永远免审的控制工具（默认 ask_user_question/exit_plan_mode）。 */
+  /** 永远免审的控制/编排工具（默认 ask_user_question/exit_plan_mode + job_output/skill/subagent/present/wait_agent/send_message/team_task_update/team_task_list）。 */
   autoAllowTools?: string[]
   /** 未分类工具的策略：`ask`（默认，fail-safe）或 `allow`。 */
   unclassified?: 'ask' | 'allow'
@@ -148,7 +148,7 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .default('off')
     .description('The approval mode assigned to new sessions. Each session can still be switched at runtime via the composer chip.'),
   editTools: Schema.array(Schema.string())
-    .default(['write', 'edit', 'str_replace_editor'])
+    .default(['write', 'edit', 'str_replace_editor', 'update_goal'])
     .description('Tools classified as the "edit" family — file modifications. Auto-approved under auto-edit mode.')
     .volatile(),
   shellTools: Schema.array(Schema.string())
@@ -156,11 +156,11 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .description('Tools classified as the "shell" family — command execution. Always require approval under request and auto-edit modes.')
     .volatile(),
   readOnlyTools: Schema.array(Schema.string())
-    .default(['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'])
+    .default(['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal'])
     .description('Tools classified as the "read-only" family. Always allowed regardless of mode.')
     .volatile(),
   autoAllowTools: Schema.array(Schema.string())
-    .default(['ask_user_question', 'exit_plan_mode'])
+    .default(['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list'])
     .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting).')
     .volatile(),
   unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The common DSH tool surface is now the shipped default** — the four
+  tool-family lists defaulted to a narrow 0.1.x-era set, so every deployment
+  had to spell out the tools it actually uses. The schema defaults
+  (`src/index.ts`) now carry the common set, and `cordis.patch.yml` repeats it
+  verbatim, so a bundle install and a manual insert behave identically and the
+  settings page's `Reset` returns to it:
+  - `editTools`: `write`, `edit`, `str_replace_editor`, `update_goal`
+  - `shellTools`: `bash`, `pwsh`, `tool:bash`, `tool:pwsh` (unchanged)
+  - `readOnlyTools`: also `reme_search`, `list_agents`, `job_list`, `get_goal`
+  - `autoAllowTools`: also `job_output`, `skill`, `subagent`, `present`,
+    `wait_agent`, `send_message`, `team_task_update`, `team_task_list`
+
+  Tool names a host does not register are simply never matched, so the wider
+  lists are safe on hosts without the Agent Teams / ReMe tools. This
+  supersedes the 0.7.0 decision to keep the schema layer deliberately narrow
+  for patch-less inserts: the two layers now carry one list and can no longer
+  drift. Because the
+  `autoAllowTools` widening means those tools no longer prompt in an
+  unconfigured deployment, a deployment that wants the old behaviour should
+  pin the previous lists in its own `cordis.yml`. The lists are pinned by
+  `test/tool-family-defaults.test.ts`; the settings page fallback in
+  `src/client/ApprovalModeSettings.tsx` mirrors them.
+
 ## [0.7.2] - 2026-10-03
 
 ### Fixed

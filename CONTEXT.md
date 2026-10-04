@@ -28,13 +28,13 @@ A tool's classification, combined with the active mode to decide approval. Four 
 _Avoid_: "tool group", "tool category"
 
 **Edit family**:
-Tools that modify files (`write` / `edit` / `str_replace_editor` by default).
+Tools that modify file or goal state (`write` / `edit` / `str_replace_editor` / `update_goal` by default).
 
 **Shell family**:
 Tools that execute commands (`bash` / `pwsh` by default).
 
 **Read-only family**:
-Tools that only read state — exempt from approval in every mode. `autoAllowTools` is checked before the family check, so `readOnly` is a fall-through exemption while `autoAllow` is an explicit one.
+Tools that only read state — exempt from approval in every mode (`read` / `glob` / `grep` / `read_image` / `list_directory` / `todo_write` / `reme_search` / `list_agents` / `job_list` / `get_goal` by default). `autoAllowTools` is checked before the family check, so `readOnly` is a fall-through exemption while `autoAllow` is an explicit one.
 
 **Other (family)**:
 Tools that fall in no configured family; behavior controlled by the `unclassified` strategy.
@@ -44,7 +44,7 @@ One of `editTools`, `shellTools`, `readOnlyTools`. The three lists are mutually 
 _Avoid_: "classification set", "category list"
 
 **autoAllowTools**:
-Tool names that bypass approval regardless of family classification. Checked BEFORE family lookup, so overlap with any family list is harmless (redundant, not conflicting).
+Tool names that bypass approval regardless of family classification (`ask_user_question` / `exit_plan_mode` plus the control-and-orchestration tools `job_output` / `skill` / `subagent` / `present` / `wait_agent` / `send_message` / `team_task_update` / `team_task_list` by default). Checked BEFORE family lookup, so overlap with any family list is harmless (redundant, not conflicting). These four lists are the plugin's schema defaults (`src/index.ts`), pinned by `test/tool-family-defaults.test.ts`.
 
 **Smart classifier pipeline** (smart mode, shell family only):
 The four ordered steps the smart-mode shell classifier runs on every shell call: (1) **danger list** — a deterministic regex set; any match hands off to manual review before the LLM is consulted. (2) **session memory** — a per-session `sha256(toolName + rawArguments)` map; a hit auto-approves without re-running the classifier. (3) **LLM classifier** — one-shot chat call to a configurable LLM returning `{"verdict":"approve"}` or `{"verdict":"ask"}`; only `approve` auto-allows. (4) **fail-safe fallback** — every unexpected outcome (timeout, protocol violation, missing seam, exception, non-approve verdict) routes to manual review. One additional guard sits after step 2 and before step 3: when the newest genuine user message exceeds the 2000-character budget, the gate short-circuits with `detail=latest-user-message-too-long` and skips the LLM call — session memory still wins because the guard is positioned AFTER the memory lookup, mirroring `dsh-auto-approve`.

@@ -38,14 +38,16 @@ export type ApprovalModeSettingsProps =
   & InjectFace<ApprovalModeSettingsInjected>
   & { t: (key: ApprovalPageKey) => string }
 
-// ─── Defaults (mirror src/index.ts; used only when value is undefined) ──────
+// ─── Defaults (mirror src/index.ts' schema; used when the value is undefined).
+// The server-side copy is pinned by test/tool-family-defaults.test.ts — keep
+// this one in step with it when either side changes. ───────────────────────
 
 const FALLBACK: Required<Config> = {
   default: 'off',
-  editTools: ['write', 'edit', 'str_replace_editor'],
+  editTools: ['write', 'edit', 'str_replace_editor', 'update_goal'],
   shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh'],
-  readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write'],
-  autoAllowTools: ['ask_user_question', 'exit_plan_mode'],
+  readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal'],
+  autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list'],
   unclassified: 'ask',
   sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
   askReason: 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',

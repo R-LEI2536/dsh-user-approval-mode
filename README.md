@@ -437,18 +437,19 @@ it is checked first, so overlap with any family list is harmless
       name: dsh-user-approval-mode
 ```
 
-These values come from the bundle patch this package ships (`cordis.patch.yml`):
+These are the plugin's schema defaults (`src/index.ts`); the bundle patch this
+package ships (`cordis.patch.yml`) repeats them verbatim, so a bundle install
+and a manual insert behave identically:
 - `default`: `off` (plugin disabled by default)
-- `editTools`: `['write', 'edit', 'str_replace_editor']`
+- `editTools`: `['write', 'edit', 'str_replace_editor', 'update_goal']`
 - `shellTools`: `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']`
-- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']`
-- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']`
+- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']`
+- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']`
 - `unclassified`: `ask`
 
-If you deploy the plugin without its bundle patch (inserting it manually in
-your own `cordis.yml` instead of installing the package as a bundle), the
-schema-level fallbacks in `src/index.ts` apply instead — they still carry the
-older, narrower `readOnlyTools` / `autoAllowTools` lists.
+A tool name no host registers is simply never matched, so carrying the newer
+Agent Teams / ReMe names in the defaults is safe on older hosts. The four lists
+are pinned by `test/tool-family-defaults.test.ts`.
 
 ### Custom Configuration
 
@@ -462,11 +463,11 @@ You can customize the plugin behavior in your agent preset:
         # Default mode for new sessions
         default: auto-edit
         
-        # Custom tool classifications
-        editTools: ['write', 'edit', 'str_replace_editor']
+        # Custom tool classifications (these are the shipped defaults)
+        editTools: ['write', 'edit', 'str_replace_editor', 'update_goal']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
-        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']
-        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']
+        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']
+        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']
         
         # Strategy for unclassified tools: 'ask' (safer) or 'allow' (faster)
         unclassified: ask
@@ -493,20 +494,19 @@ You can customize the plugin behavior in your agent preset:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `default` | string | `off` | Default approval mode for new sessions. Options: `request`, `auto-edit`, `smart`, `yolo`, `off` |
-| `editTools` | string[] | `['write', 'edit', 'str_replace_editor']` | Tools classified as "edit" family (file modifications) |
+| `editTools` | string[] | `['write', 'edit', 'str_replace_editor', 'update_goal']` | Tools classified as "edit" family (file modifications) |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | Tools classified as "shell" family (command execution) |
-| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents']` | Tools classified as "readonly" family (always allowed) |
-| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent']` | Tools that always bypass approval |
+| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | Tools classified as "readonly" family (always allowed) |
+| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | Tools that always bypass approval |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
 | `askReason` | string | *see default* | Custom message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders |
 | `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`) |
 | `smartModel` | string \| null | `null` | LLM model for the smart-mode classifier (null = inherit `agentDefaultModel`) |
 
-The `Default` column above lists the values supplied by the bundle patch
-(`cordis.patch.yml`). A deployment that inserts the plugin without the bundle
-patch falls back to the schema defaults in `src/index.ts`, where
-`readOnlyTools` / `autoAllowTools` still hold the previous, narrower lists.
+The `Default` column lists the plugin's schema defaults (`src/index.ts`); the
+shipped bundle patch repeats them verbatim, so a bundle install and a manual
+insert behave identically.
 
 ### Default Ask Reason
 
@@ -520,9 +520,9 @@ The plugin automatically classifies tools into four families:
 
 | Family | Default Tools | Behavior |
 |--------|--------------|----------|
-| **Edit** | `write`, `edit`, `str_replace_editor` | File modification tools |
+| **Edit** | `write`, `edit`, `str_replace_editor`, `update_goal` | File modification tools |
 | **Shell** | `bash`, `pwsh`, `tool:bash`, `tool:pwsh` | Command execution tools |
-| **Read-Only** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents` | Safe browsing tools (always allowed) |
+| **Read-Only** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents`, `job_list`, `get_goal` | Safe browsing tools (always allowed) |
 | **Other** | *all other tools* | Unclassified tools, behavior depends on `unclassified` config |
 
 ## How It Works
