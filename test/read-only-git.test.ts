@@ -7,6 +7,11 @@
  * than the positive one — every entry there is a command that must keep
  * asking, and the parser is deliberately biased towards `undefined`.
  *
+ * Two shapes carry their own rules: a CHAIN is vetted link by link (one bad
+ * link rejects the whole command), and `echo` is the one non-git command in
+ * the table — its quoted arguments are fine, while a quoted GIT argument stays
+ * out because a quoted flag name would slip past the flag checks.
+ *
  * The last test pins the schema default of the deployer kill switch, which is
  * what an unconfigured deployment (and every existing `cordis.patch.yml` that
  * does not mention the field) will run with.
@@ -65,6 +70,24 @@ const ALLOWED: ReadonlyArray<readonly [string, string]> = [
   ['git worktree list', 'worktree list'],
   ['git submodule status', 'submodule status'],
   ['git submodule summary', 'submodule summary'],
+
+  // Chains: every link is vetted on its own, so an all-read-only chain passes.
+  ['git status && git log', 'status + log'],
+  ['git status;git diff --stat', 'status + diff'],
+  ['git status || git log', 'status + log'],
+  ['git log | git status', 'log + status'],
+  ['git status &&\n  git log -1', 'status + log'],
+  ['git -C /repo status && git -C /repo log -1', 'status + log'],
+  ['git stash list && git worktree list', 'stash list + worktree list'],
+
+  // `echo` is the one stdout-only command in the table; its arguments are
+  // inert text, so quoted markers are allowed.
+  ['echo', 'echo'],
+  ['echo hello', 'echo'],
+  // Everything after the `echo` word is inert text, including a git command.
+  ['echo git status', 'echo'],
+  ['echo "=== status ==="', 'echo'],
+  ['git status && echo "=== DIFF ===" && git diff --stat', 'status + echo + diff'],
 ]
 
 /** Commands that must NOT match — the parser stays out and the gate asks. */
@@ -79,7 +102,6 @@ const DENIED: readonly string[] = [
   'env git status',
   'sh -c "git status"',
   'GIT_PAGER=cat git status',
-  'echo git status',
   'gitk status',
   '/usr/bin/git status',
 
@@ -96,16 +118,44 @@ const DENIED: readonly string[] = [
   // Parentheses are rejected outright, so git's `%(atom)` format syntax asks.
   'git for-each-ref --format=%(refname) refs/heads',
   'git status \\; rm -rf /',
-  'git status\nrm -rf /',
+  // Control characters that are not separators are still hard-rejected.
   'git status\r\nrm -rf /',
   'git status\u0000',
 
-  // Quoted arguments (kept out so tokenization stays trivially trustworthy).
+  // Chains: one link that is not read-only rejects the whole command.
+  'git status\nrm -rf /',
+  'git status && cd /tmp && git log',
+  'git status && head -1',
+  'git log | head',
+  'git status && git push',
+  'git status && git branch -D feature',
+  'git status &&',
+  '&& git status',
+  'git status ; ; git log',
+  'echo status && rm -rf /',
+  'echo "a && rm -rf /"',
+
+  // `echo` cannot edit: redirection is its only write path, and a non-git
+  // consumer in the pipe is never in the table.
+  'echo x > f',
+  'echo x >> f',
+  'echo x <<< y',
+  'echo x | tee f',
+  'echo $(rm -rf /)',
+  'echo `rm -rf /`',
+  'sudo echo x',
+  '"echo" x',
+  'ec"ho" x',
+
+  // Quoted arguments: echo may be quoted, a GIT argument may not — a quoted
+  // flag name hides itself from the flag checks.
   'git -C "/a b" status',
   'git status "short"',
   "git status 'short'",
   "git log --pretty=format:'%h %s'",
   "git tag -l 'v*'",
+  'git diff "--output=/tmp/x"',
+  'git log "--ext-diff"',
 
   // Global options that can change config / paths / execution.
   'git -c core.pager=cat status',

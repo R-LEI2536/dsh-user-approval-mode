@@ -6,10 +6,11 @@ The agent spends a large share of its shell calls on `git status`, `git log`,
 `git diff` and friends, which are read-only but still landed in the shell
 family — so `request` and `auto-edit` prompted on every one of them, and
 `smart` paid an LLM round-trip for them. We added a **read-only command
-fast-path**: when the command text is a single strictly-parsed read-only git
-invocation, the gate allows it without prompting (request / auto-edit / smart)
-and the smart-mode evaluator skips session memory and the classifier. The
-rules are code (`src/read-only-git.ts`), not configuration; the only knob is
+fast-path**: when the command text is a chain of strictly-parsed read-only
+invocations (a `git status` / `git log` link, or an `echo` decoration line),
+the gate allows it without prompting (request / auto-edit / smart) and the
+smart-mode evaluator skips session memory and the classifier. The rules are
+code (`src/read-only-git.ts`), not configuration; the only knob is
 the `readOnlyGitCommands` switch (default on).
 
 ## Considered options
@@ -42,11 +43,23 @@ the `readOnlyGitCommands` switch (default on).
 ## Why
 
 - **A strict parser is auditable in a way a regex is not.** Everything that
-  composes, redirects, substitutes, quotes, prefixes a wrapper (`sudo`, `env`,
-  `sh -c`), or passes a config/exec/path global option (`-c`, `--exec-path`,
-  `--git-dir`, …) fails to match and keeps asking. So does every subcommand
-  whose read-only form is bare-only, and `--output*` / `--ext-diff` /
-  `--textconv`. The bias is deliberately one-sided: `undefined` means "ask".
+  redirects, substitutes, quotes a git argument, prefixes a wrapper (`sudo`,
+  `env`, `sh -c`), or passes a config/exec/path global option (`-c`,
+  `--exec-path`, `--git-dir`, …) fails to match and keeps asking, and a chain
+  is accepted only link by link. So does every subcommand whose read-only form
+  is bare-only, and `--output*` / `--ext-diff` / `--textconv`. The bias is
+  deliberately one-sided: `undefined` means "ask".
+- **Composition adds no capability, so long as every link is vetted.** The
+  shell only sequences processes: `git status && git log` is exactly those two
+  allowed commands, and an `echo "=== x ==="` between them writes to stdout and
+  nothing else. So the parser splits on `;` `&` `|` and newline and requires
+  EVERY segment to pass the same table — one bad link (`git status && rm -rf /`,
+  `git log | head`) drops the whole chain back to "ask". Redirection is still
+  rejected for the entire text before the split, which is the only way `echo`
+  could write a file (`echo x > f`), and quotes are still banned in git
+  segments because a quoted flag name hides itself from the flag checks
+  (`git diff "--output=/tmp/x"`); echo arguments may be quoted because they are
+  inert text.
 - **This does not re-open ADR 0002's rejected "pure-rule auto-approve".**
   That option replaced the classifier for *all* shell commands and was
   rejected for not scaling. This is a short-circuit for the single
@@ -73,10 +86,12 @@ the `readOnlyGitCommands` switch (default on).
 - Request mode's documented contract narrows: "shell family requires
   approval" now has a read-only git exception. CONTEXT.md states it in the
   mode definitions rather than leaving it to the mode table.
-- Decision logging gains a dedicated tag,
-  `[dsh-user-approval[read-only-git]] decision=allow detail=<subcommand>`, in
-  every gated mode. The existing `[dsh-user-approval[smart]]` lines are
-  unchanged, so existing greps keep working.
+- Decision logging uses a dedicated tag,
+  `[dsh-user-approval[read-only-git]] decision=allow detail=<label>`, in every
+  gated mode, where the label is either the single link (`detail=status`) or
+  the chain (`detail=status + echo + diff`). The existing
+  `[dsh-user-approval[smart]]` lines are unchanged, so existing greps keep
+  working.
 - The client settings component needed a `FALLBACK` entry and `readValue` line
   for the new field (`Required<Config>` in `src/client/ApprovalModeSettings.tsx`)
   plus the switch row; the client bundle must be rebuilt alongside the server
@@ -87,12 +102,27 @@ the `readOnlyGitCommands` switch (default on).
   reject the explicit `--ext-diff` / `--textconv` opt-ins. Closing it would
   need forcing `--no-textconv`/`--no-ext-diff` onto every diff-family
   invocation, which changes the output the user asked to see.
-- **Accepted boundary:** quoted arguments do not match, so `git log
+- **Accepted boundary:** quoted GIT arguments do not match, so `git log
   --format='%h %s'`, `git -C "a b" status` and git's `%(atom)` format syntax
-  (`(` is rejected) keep asking. Fail-closed beats a quote-aware tokenizer.
+  (`(` is rejected) keep asking — fail-closed beats a quote-aware tokenizer.
+  Echo arguments may be quoted (`echo "=== x ==="`).
+- **Accepted boundary:** a pipe into a non-git consumer (`git log | head`),
+  every redirection (`git status 2>&1`, `git log > f`), and `cd repo && git
+  status` keep asking. A viewer/filter table would need a write-flag audit per
+  command (`sort -o`, `sed -i`, `tee`, `awk`), which is not worth one saved
+  prompt; `cd` changes what the following links read.
 
 ## Revision history
 
+- **Revision 2**: chains and `echo` lines were added after the fast-path had
+  shipped and been verified live. Composition is safe under the same rule that
+  made a single command safe — every link is vetted — so the change was
+  splitting the text and moving the checks into a per-segment function, not a
+  new mechanism. Two alternatives were rejected: allowing quotes globally
+  (re-opens the `--output` bypass in a git segment) and a viewer whitelist
+  (`head`, `cat`, `sort`) that would need a write-flag audit per command.
+  `printf` was left out because the agent does not use it; adding a stdout-only
+  name is one entry in `STDOUT_COMMANDS`.
 - **Revision 1** (initial): `readOnlyGitCommands` was deployer-only (considered
   option 4 above rejected the settings-page control on the ADR 0001/0002
   boundary that keeps safety-floor knobs with the deployer). Revised after the

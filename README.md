@@ -24,7 +24,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 - **Settings Page**: Configure approval-mode options (tool family lists, per-mode sandbox policy, approval prompt template, and smart-classifier provider/model) in `Settings → Approval Modes`. The default mode, the unclassified strategy, and most smart-mode internals remain deployer-only (set in `cordis.yml`).
 - **LLM Provider Reuse**: The Smart classifier reuses DSH's configured LLM provider and model; this plugin does not configure an endpoint, API key, or OpenAI-compatible protocol separately.
 - **Smart-mode shell classifier**: A five-step pipeline (danger list → read-only git fast-path → session memory → LLM classifier → fail-safe) auto-approves routine shell commands while keeping dangerous or unclear ones in front of the user.
-- **Read-only git fast-path**: A single strictly-parsed read-only git command (`git status`, `git log`, `git diff`, …) is exempt from approval in request, auto-edit, and smart, so the agent's highest-frequency shell calls stop prompting. Switch it on the settings page (`readOnlyGitCommands`), or pin it in `cordis.yml`.
+- **Read-only git fast-path**: A chain of strictly-parsed read-only links (`git status`, `git log`, `git diff`, …) joined with `&&` `;` `|` or a newline, plus `echo "…"` decoration lines, is exempt from approval in request, auto-edit, and smart, so the agent's highest-frequency shell calls stop prompting. Switch it on the settings page (`readOnlyGitCommands`), or pin it in `cordis.yml`.
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
@@ -43,17 +43,17 @@ The approval modes are inspired by [Qwen Code](https://github.com/QwenLM/Qwen-Co
 | `yolo` | Allow | Allow | Allow | Allow | No approval needed, full automation |
 | `off` | Allow | Allow | Allow | Allow | Disabled, restore default DSH behavior |
 
-¹ Except a single strictly-parsed read-only git command (`git status`, `git log`, `git diff`, …), which is allowed without prompting in these three modes — see [Read-only git commands](#read-only-git-commands).
+¹ Except a strictly-parsed read-only command chain (a `git status` / `git log` / `git diff` link, an `echo "…"` line, or those joined with `&&` `;` `|`), which is allowed without prompting in these three modes — see [Read-only git commands](#read-only-git-commands).
 
 ### Mode Details
 
 #### `request` - Maximum Security
-- **Behavior**: All edit, shell, and unclassified tools require approval, except a read-only git command (fast-path)
+- **Behavior**: All edit, shell, and unclassified tools require approval, except a read-only command chain (fast-path)
 - **Sandbox**: Automatically switches to `workspace-write`
 - **Use Case**: High-security environments, production systems, or when working with critical files
 
 #### `auto-edit` - Balanced Mode
-- **Behavior**: Edit tools auto-approve, shell and unclassified tools require approval, except a read-only git command (fast-path)
+- **Behavior**: Edit tools auto-approve, shell and unclassified tools require approval, except a read-only command chain (fast-path)
 - **Sandbox**: Automatically switches to `workspace-write`
 - **Use Case**: Development environments where file modifications are trusted but shell commands need oversight
 
@@ -401,7 +401,7 @@ override (so the deployer's base re-emerges).
 | `shellTools` | comma-separated text (set) | Always require approval under request and auto-edit |
 | `readOnlyTools` | comma-separated text (set) | Always allowed (any mode) |
 | `autoAllowTools` | comma-separated text (set) | Bypass approval regardless of family |
-| `readOnlyGitCommands` | switch | Allow a strictly-parsed single read-only git command without prompting (default on) |
+| `readOnlyGitCommands` | switch | Allow a strictly-parsed read-only command — or a chain of them, plus `echo "…"` lines — without prompting (default on) |
 | `sandboxDefaults` | per-mode dropdown | Sandbox policy when switching into each mode |
 | `askReason` | textarea | Approval dialog template (placeholders: `{tool}` / `{mode}` / `{family}`) |
 | `smartProvider` | text | LLM provider route for the smart classifier (leave empty to inherit host default) |
@@ -506,7 +506,7 @@ You can customize the plugin behavior in your agent preset:
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | Tools classified as "readonly" family (always allowed) |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | Tools that always bypass approval |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
-| `readOnlyGitCommands` | boolean | `true` | Allow a single strictly-parsed read-only git command instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
+| `readOnlyGitCommands` | boolean | `true` | Allow a strictly-parsed read-only command chain instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
 | `askReason` | string | *see default* | Custom message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders |
 | `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`) |
@@ -541,8 +541,8 @@ family, so request and auto-edit would prompt on every one of them and smart
 would spend an LLM call on them. The **read-only command fast-path** exempts
 them.
 
-A command is exempt only when it is a *single, strictly parsed* read-only git
-invocation. Everything else keeps asking:
+A command is exempt when it is a chain of *strictly parsed* read-only links.
+Everything else keeps asking:
 
 - **Allowed forms** — `git status`, `git log`, `git diff`, `git show`,
   `git rev-parse`, `git rev-list`, `git describe`, `git shortlog`,
@@ -552,11 +552,19 @@ invocation. Everything else keeps asking:
   `get-url`), `git stash list|show`, `git worktree list`, and
   `git submodule status|summary`. `git -C <path>` / `--no-pager` prefixes are
   accepted.
-- **Never exempt** — anything composed or redirected (`&&`, `;`, `|`, `>`,
-  `$(…)`, backticks), anything quoted, wrapped (`sudo`, `env`, `sh -c`) or
-  env-prefixed, any config/path global option (`-c`, `--config-env`,
-  `--exec-path`, `--git-dir`, `--work-tree`), `--output*` / `--ext-diff` /
-  `--textconv`, any writing form of the above subcommands
+- **Chains** — links joined by `;`, `&`, `|`, `&&`, `||` or a newline are
+  exempt **only when every link is exempt on its own**, so
+  `git status && echo "=== DIFF ===" && git diff --stat` is silent while
+  `git status && rm -rf /` is not. `echo "…"` is the one non-git link in the
+  table: its arguments are inert text, because redirection is its only way to
+  write anything and redirection never matches.
+- **Never exempt** — any redirection (`>`, `>>`, `<`, `2>&1`), any
+  substitution (`$(…)`, backticks), any quoted **git** argument (a quoted flag
+  name hides from the flag checks), a pipe into a non-git consumer
+  (`git log | head`), anything wrapped (`sudo`, `env`, `sh -c`) or
+  env-prefixed, `cd repo && git status`, any config/path global option (`-c`,
+  `--config-env`, `--exec-path`, `--git-dir`, `--work-tree`), `--output*` /
+  `--ext-diff` / `--textconv`, any writing form of the above subcommands
   (`git branch foo`, `git tag v1`, `git stash`, `git remote add …`), the
   excluded `config` / `symbolic-ref` / `grep` / `cat-file`, and every network
   command (`fetch`, `pull`, `clone`, `ls-remote`, `remote show`).
@@ -566,8 +574,9 @@ invocation. Everything else keeps asking:
   deployer `base` in `cordis.yml`; a user override wins over that base, and
   Reset on the row falls back to it.
 - **Logging** — every fast-path allowance writes
-  `[dsh-user-approval[read-only-git]] decision=allow detail=<subcommand>` to
-  the DSH log.
+  `[dsh-user-approval[read-only-git]] decision=allow detail=<label>` to the
+  DSH log, where the label is one link (`detail=status`) or the whole chain
+  (`detail=status + echo + diff`).
 - **Known ceiling** — `diff` / `log` / `show` / `blame` still execute a
   repository-configured textconv filter or external diff driver, because git
   itself does that and no command-text check can see it. Only the explicit
@@ -579,7 +588,7 @@ invocation. Everything else keeps asking:
 
 1. **Tool Execution Interception**: The plugin listens to `tools/pre-execute` events
 2. **Family Classification**: Determines which family the tool belongs to
-3. **Read-Only Fast-Path**: A shell call that is a single strictly-parsed read-only git command is allowed without approval
+3. **Read-Only Fast-Path**: A shell call whose every link is a strictly-parsed read-only command is allowed without approval
 4. **Mode Check**: Evaluates current approval mode
 5. **Decision**: Returns `{ kind: 'ask' }` for tools requiring approval, or allows execution
 6. **Sandbox Sync**: Automatically adjusts sandbox policy when switching modes

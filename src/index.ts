@@ -314,13 +314,13 @@ export function apply(ctx: Context, config: VolatileConfig): void {
   const modelSuffix = (selection?: { provider: string; model: string }): string =>
     selection === undefined ? '' : ` model=${selection.model} provider=${selection.provider}`
 
-  // Logger for the read-only git fast-path. Same posture as
+  // Logger for the read-only command fast-path. Same posture as
   // `logSmartDecision` (a broken logger must never change an outcome), but a
   // distinct tag so it is greppable on its own and does not disturb the
   // existing `[dsh-user-approval[smart]]` decision lines.
-  const logReadOnlyGitAllow = (subcommand: string): void => {
+  const logReadOnlyGitAllow = (label: string): void => {
     try {
-      ctx.logger.info(`[dsh-user-approval[read-only-git]] decision=allow detail=${subcommand}`)
+      ctx.logger.info(`[dsh-user-approval[read-only-git]] decision=allow detail=${label}`)
     } catch {
       // Swallow logger failures; the decision has already been computed.
     }
@@ -394,16 +394,17 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     const family = familyOf(exec.name)
     if (family === 'readonly') return decision
 
-    // 只读 git 快路径：只在 shell 族本来会被拦的两个模式下有意义。
+    // 只读命令快路径（含用 && / ; / | 串起来的链与 echo 装饰行）：只在 shell
+    // 族本来会被拦的两个模式下有意义。
     // off / yolo 必须原样返回下游 decision（不重建对象、不写日志）；
     // smart 在 evaluator 内自行处理（见 docs/adr/0003）。
     const shellWouldAsk = mode === 'request' || mode === 'auto-edit'
-    const gitSubcommand = shellWouldAsk && family === 'shell' && cfg.readOnlyGitCommands !== false
+    const gitLabel = shellWouldAsk && family === 'shell' && cfg.readOnlyGitCommands !== false
       ? matchReadOnlyGitCommand(commandFromArguments(exec.arguments))
       : undefined
 
     // Smart 模式 + shell 族：先做提权拦截，再走裁决流水线（危险清单
-    // → 只读 git 快路径 → 会话记忆 → LLM 分类器 → fail-safe）。提权强制
+    // → 只读命令快路径 → 会话记忆 → LLM 分类器 → fail-safe）。提权强制
     // ask，分类器与快路径都不会代决 sandbox 升级——即使下游 preset 配成
     // auto-allow。
     if (mode === 'smart' && family === 'shell') {
@@ -424,7 +425,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       const verdict = await smartEvaluator(exec, agent.session)
       if (verdict.kind === 'allow') {
         if (verdict.source === 'read-only-git') {
-          logReadOnlyGitAllow(verdict.subcommand)
+          logReadOnlyGitAllow(verdict.label)
           return { kind: 'allow' }
         }
         logSmartDecision('allow', `detail=${verdict.source}${modelSuffix(verdict.selection)}`)
@@ -441,8 +442,8 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       }
     }
 
-    if (gitSubcommand !== undefined) {
-      logReadOnlyGitAllow(gitSubcommand)
+    if (gitLabel !== undefined) {
+      logReadOnlyGitAllow(gitLabel)
       return { kind: 'allow' }
     }
 

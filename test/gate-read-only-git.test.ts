@@ -66,6 +66,20 @@ test('gate: request mode allows a read-only git command and logs it', async () =
   assert.deepEqual(gate.logs, [`${READ_ONLY_LOG}status`])
 })
 
+test('gate: request mode allows a chain of read-only commands and logs the links', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide('git status && echo "=== log ===" && git log -1')
+  assert.deepEqual(decision, { kind: 'allow' })
+  assert.deepEqual(gate.logs, [`${READ_ONLY_LOG}status + echo + log`])
+})
+
+test('gate: a chain with one writing link still asks (redirection wins)', async () => {
+  const gate = makeGate('request')
+  assert.equal((await gate.decide('echo x > /tmp/out && git status')).kind, 'ask')
+  assert.equal((await gate.decide('git status && echo x > /tmp/out')).kind, 'ask')
+  assert.deepEqual(gate.logs, [])
+})
+
 test('gate: request mode still asks for every other shell command', async () => {
   const gate = makeGate('request')
   assert.equal((await gate.decide('git push origin main')).kind, 'ask')
@@ -84,6 +98,7 @@ test('gate: auto-edit mode allows the read-only forms too', async () => {
 test('gate: the deployer kill switch restores "shell always asks"', async () => {
   const gate = makeGate('request', { readOnlyGitCommands: false })
   assert.equal((await gate.decide('git status')).kind, 'ask')
+  assert.equal((await gate.decide('git status && echo "=== log ===" && git log -1')).kind, 'ask')
   assert.deepEqual(gate.logs, [])
 })
 
@@ -98,6 +113,13 @@ test('gate: smart mode takes the fast-path without an LLM seam', async () => {
     gate.logs.every((line) => !line.includes('[smart]')),
     'the fast-path uses its own tag, not the smart decision tag',
   )
+})
+
+test('gate: smart mode allows a read-only chain without an LLM seam', async () => {
+  const gate = makeGate('smart')
+  const decision = await gate.decide('git status && echo "=== log ===" && git log -1')
+  assert.deepEqual(decision, { kind: 'allow' })
+  assert.deepEqual(gate.logs, [`${READ_ONLY_LOG}status + echo + log`])
 })
 
 test('gate: smart mode still asks when the git command requests a sandbox escalation', async () => {

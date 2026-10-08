@@ -6,9 +6,10 @@
  * under the smart approval mode:
  *
  *   1. Danger list — compiled deterministic regex; a hit hands off to human.
- *   2. Read-only git fast-path — a strictly-parsed single read-only git
- *      invocation auto-approves here, without touching memory or the LLM
- *      (see `read-only-git.ts`). Ordered after the danger list on purpose.
+ *   2. Read-only command fast-path — a strictly-parsed chain of read-only git
+ *      invocations (plus `echo` decoration lines) auto-approves here, without
+ *      touching memory or the LLM (see `read-only-git.ts`). Ordered after the
+ *      danger list on purpose.
  *   3. Session memory — `sha256(toolName + rawArguments)` key, 30-min TTL,
  *      per-session bounded cache; a hit auto-approves without LLM.
  *   4. LLM classifier — one-shot chat call against `ctx.llm` with the
@@ -89,7 +90,7 @@ export interface SmartModelSelection {
  *  fast-path, session memory, no-default-model, …) leave it undefined. */
 export type SmartShellDecision =
   | { readonly kind: 'allow'; readonly source: 'remembered' | 'classifier'; readonly selection?: SmartModelSelection }
-  | { readonly kind: 'allow'; readonly source: 'read-only-git'; readonly subcommand: string }
+  | { readonly kind: 'allow'; readonly source: 'read-only-git'; readonly label: string }
   | { readonly kind: 'ask'; readonly detail: string; readonly selection?: SmartModelSelection }
 
 /** Factory return type. */
@@ -592,15 +593,15 @@ export function createSmartShellEvaluator(options: {
       return { kind: 'ask', detail: `pattern=${danger.source}` }
     }
 
-    // Read-only git fast-path. Positioned AFTER the danger list so no
+    // Read-only command fast-path. Positioned AFTER the danger list so no
     // deployer-configured pattern can be bypassed by it, and BEFORE the
     // lifetime check / session memory / LLM call because a pure text match
     // needs none of those resources and is cheaper than all of them.
     // Deliberately not written to session memory: the match is O(1) and a
     // remembered entry would only evict something useful from the cache.
     if (config.readOnlyGitCommands && command !== undefined) {
-      const subcommand = matchReadOnlyGitCommand(command)
-      if (subcommand !== undefined) return { kind: 'allow', source: 'read-only-git', subcommand }
+      const label = matchReadOnlyGitCommand(command)
+      if (label !== undefined) return { kind: 'allow', source: 'read-only-git', label }
     }
 
     if (lifetimeSignal.aborted) return { kind: 'ask', detail: 'unloaded' }

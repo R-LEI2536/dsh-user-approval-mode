@@ -22,7 +22,7 @@
 - **Web UI模式选择器**：输入框下方的快捷芯片，无需命令即可切换审批模式
 - **设置页面**：在 `设置 → 审批模式` 里配置审批选项（工具族名单、各模式 sandbox 策略、审批弹窗文案模板，以及 smart 分类器的 provider/model）。默认模式、未分类策略与 smart 内部细节仅由部署方配置（在 `cordis.yml` 中设置）。
 - **Smart 模式 shell 分类器**：五步流水线（危险清单 → 只读 git 快路径 → 会话记忆 → LLM 分类器 → fail-safe），自动放行例行 shell 命令，危险或不确定仍转人工。
-- **只读 git 快路径**：严格解析后的单条只读 git 命令（`git status`、`git log`、`git diff` 等）在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。设置页有开关（`readOnlyGitCommands`），也可在 `cordis.yml` 里钉 base。
+- **只读 git 快路径**：严格解析后的只读命令链（`git status`、`git log`、`git diff` 等，用 `&&` `;` `|` 或换行串起来）外加 `echo "…"` 装饰行，在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。设置页有开关（`readOnlyGitCommands`），也可在 `cordis.yml` 里钉 base。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
@@ -41,17 +41,17 @@
 | `yolo` | 允许 | 允许 | 允许 | 允许 | 无需审批，完全自动化 |
 | `off` | 允许 | 允许 | 允许 | 允许 | 禁用，恢复 DSH 默认行为 |
 
-¹ 例外：严格解析后的单条只读 git 命令（`git status`、`git log`、`git diff` 等）在这三个模式下免审直放——见[只读 git 命令](#只读-git-命令)。
+¹ 例外：严格解析后的只读命令（`git status` / `git log` / `git diff` 这类单条、`echo "…"` 装饰行，或用 `&&` `;` `|` 串起来的组合）在这三个模式下免审直放——见[只读 git 命令](#只读-git-命令)。
 
 ### 模式详情
 
 #### `request` - 最高安全性
-- **行为**：所有编辑、Shell 和未分类工具都需要审批，只读 git 命令除外（快路径）
+- **行为**：所有编辑、Shell 和未分类工具都需要审批，只读命令链除外（快路径）
 - **沙箱**：自动切换到 `workspace-write`
 - **使用场景**：高安全环境、生产系统或处理关键文件时
 
 #### `auto-edit` - 平衡模式
-- **行为**：编辑工具自动批准，Shell 和未分类工具需要审批，只读 git 命令除外（快路径）
+- **行为**：编辑工具自动批准，Shell 和未分类工具需要审批，只读命令链除外（快路径）
 - **沙箱**：自动切换到 `workspace-write`
 - **使用场景**：开发环境，信任文件修改但需要监控 Shell 命令
 
@@ -315,7 +315,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `shellTools` | 逗号分隔文本（集合） | request / auto-edit 模式下都要审批 |
 | `readOnlyTools` | 逗号分隔文本（集合） | 任何模式都放行 |
 | `autoAllowTools` | 逗号分隔文本（集合） | 与族无关、直接绕过审批 |
-| `readOnlyGitCommands` | 开关 | 严格解析后的单条只读 git 命令免审（默认开） |
+| `readOnlyGitCommands` | 开关 | 严格解析后的只读命令（或命令链，外加 `echo "…"` 行）免审（默认开） |
 | `sandboxDefaults` | 每模式下拉框 | 切到该模式时联动写入的 sandbox 策略 |
 | `askReason` | 多行文本 | 审批弹窗文案模板（占位符：`{tool}` / `{mode}` / `{family}`） |
 
@@ -408,7 +408,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | 分类为"只读"族的工具（始终允许） |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | 始终绕过审批的工具 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
-| `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的单条只读 git 命令而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
+| `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的只读命令链而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
 | `askReason` | string | *见默认值* | 审批请求的自定义消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符 |
 | `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
@@ -440,7 +440,7 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
 `git log`、`git diff` 等）。它们属于 Shell 族，于是 request / auto-edit 每条都
 弹窗，smart 每条都花一次 LLM 调用。**只读命令快路径**把它们豁免掉。
 
-只有「单条、严格解析后的只读 git 调用」才豁免，其余一律照旧弹窗：
+只要每一环都是「严格解析后的只读调用」，整条命令就豁免；其余一律照旧弹窗：
 
 - **放行形式** —— `git status`、`git log`、`git diff`、`git show`、
   `git rev-parse`、`git rev-list`、`git describe`、`git shortlog`、
@@ -449,11 +449,17 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
   `git branch` / `git tag` / `git remote`（`-v`、`get-url`）/
   `git stash list|show` / `git worktree list` / `git submodule status|summary`
   的列表形式。允许 `git -C <path>` 与 `--no-pager` 前缀。
-- **永不放行** —— 任何组合或重定向（`&&`、`;`、`|`、`>`、`$(…)`、反引号）、
-  任何带引号、被包装（`sudo`、`env`、`sh -c`）或带环境变量前缀的命令、任何
-  配置/路径类全局选项（`-c`、`--config-env`、`--exec-path`、`--git-dir`、
-  `--work-tree`）、`--output*` / `--ext-diff` / `--textconv`、上述子命令的写
-  形式（`git branch foo`、`git tag v1`、`git stash`、`git remote add …`）、
+- **命令链** —— 用 `;` `&` `|` `&&` `||` 或换行连接的链，**只有每一环单独都
+  豁免时才豁免**：`git status && echo "=== DIFF ===" && git diff --stat` 免审，
+  `git status && rm -rf /` 不免审。`echo "…"` 是表里唯一的非 git 命令——它的
+  参数只是文本，因为重定向（它唯一能写文件的途径）永远不匹配。
+- **永不放行** —— 任何重定向（`>`、`>>`、`<`、`2>&1`）、任何替换（`$(…)`、
+  反引号）、任何带引号的 **git** 参数（引号里的 flag 名会躲过 flag 检查）、
+  管道接到非 git 命令（`git log | head`）、被包装（`sudo`、`env`、`sh -c`）
+  或带环境变量前缀的命令、`cd repo && git status`、任何配置/路径类全局选项
+  （`-c`、`--config-env`、`--exec-path`、`--git-dir`、`--work-tree`）、
+  `--output*` / `--ext-diff` / `--textconv`、上述子命令的写形式
+  （`git branch foo`、`git tag v1`、`git stash`、`git remote add …`）、
   被排除的 `config` / `symbolic-ref` / `grep` / `cat-file`，以及所有网络类
   （`fetch`、`pull`、`clone`、`ls-remote`、`remote show`）。
 - **总开关** —— 在设置页把 `readOnlyGitCommands` 关掉，恢复 request /
@@ -461,7 +467,8 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
   也可作为部署方 base 写在 `cordis.yml`；用户覆盖优先于 base，该行 Reset
   则回落到 base。
 - **日志** —— 每次快路径放行都会写
-  `[dsh-user-approval[read-only-git]] decision=allow detail=<子命令>`。
+  `[dsh-user-approval[read-only-git]] decision=allow detail=<标签>`，标签或是
+  单条（`detail=status`），或是整条链（`detail=status + echo + diff`）。
 - **已知天花板** —— `diff` / `log` / `show` / `blame` 在仓库配置了 textconv
   过滤器或外部 diff 驱动时仍会执行那个外部程序，因为这是 git 自己的行为、
   命令文本判不出来。只有显式的 `--ext-diff` / `--textconv` 会被拒。理由与
@@ -472,7 +479,7 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
 
 1. **工具执行拦截**：插件监听 `tools/pre-execute` 事件
 2. **族分类**：确定工具属于哪个族
-3. **只读快路径**：属于 shell 族、但内容为严格解析后的单条只读 git 命令的调用，直接放行
+3. **只读快路径**：属于 shell 族、但每一环都是严格解析后的只读命令的调用，直接放行
 4. **模式检查**：评估当前审批模式
 5. **决策**：对需要审批的工具返回 `{ kind: 'ask' }`，或允许执行
 6. **沙箱同步**：切换模式时自动调整沙箱策略

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Read-only command chains and `echo` decoration lines are auto-allowed** —
+  the read-only fast-path no longer stops at a single invocation. The command
+  text is split on `;` `&` `|` and newline (covering `&&` `||` `|&`) and
+  **every** link must pass the same strict table, so
+  `git status && echo "=== DIFF ===" && git diff --stat` is silent while
+  `git status && rm -rf /` is not: one bad link rejects the whole chain.
+  `echo` joined the table as its only non-git command — redirection, its only
+  write path, is rejected for the whole text before the split.
+
+### Changed
+
+- Redirection stays refused wholesale, so `echo x > f`, `git status 2>&1` and
+  `git log | head` keep asking. Quotes are now allowed in **echo** arguments
+  (`echo "=== status ==="`) but stay banned in git arguments, where a quoted
+  flag name slips past the flag checks (`git diff "--output=/tmp/x"`).
+- The fast-path log label carries the whole chain:
+  `[dsh-user-approval[read-only-git]] decision=allow detail=status + echo + diff`.
+  Single-command labels are unchanged (`detail=status`).
+- The `readOnlyGitCommands` settings-page description now describes chains
+  instead of "a single command".
+
 ## [0.8.0] - 2026-10-08
 
 ### Added
