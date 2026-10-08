@@ -198,6 +198,9 @@ test('matchReadOnlyGitCommand: returns undefined for a missing command', () => {
 })
 
 test('readOnlyGitCommands: the schema default is true (fast-path on)', () => {
-  const resolved = Config({}) as unknown as { readOnlyGitCommands: boolean }
-  assert.equal(resolved.readOnlyGitCommands, true)
+  // The field is `.volatile()` (a user-editable settings switch), so the
+  // resolved value comes through `.get()`. This also pins that volatility:
+  // a plain field has no `.get()`, and this test fails.
+  const resolved = Config({}) as unknown as { readOnlyGitCommands: { get(): boolean } }
+  assert.equal(resolved.readOnlyGitCommands.get(), true)
 })

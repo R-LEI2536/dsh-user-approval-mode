@@ -1,6 +1,6 @@
 # Read-only git commands are auto-allowed by a strict parser, not by a configurable list
 
-Status: accepted.
+Status: accepted (revised — see "Revision history").
 
 The agent spends a large share of its shell calls on `git status`, `git log`,
 `git diff` and friends, which are read-only but still landed in the shell
@@ -10,7 +10,7 @@ fast-path**: when the command text is a single strictly-parsed read-only git
 invocation, the gate allows it without prompting (request / auto-edit / smart)
 and the smart-mode evaluator skips session memory and the classifier. The
 rules are code (`src/read-only-git.ts`), not configuration; the only knob is
-the deployer's `readOnlyGitCommands` kill switch (default on).
+the `readOnlyGitCommands` switch (default on).
 
 ## Considered options
 
@@ -63,11 +63,13 @@ the deployer's `readOnlyGitCommands` kill switch (default on).
 
 ## Consequences
 
-- `readOnlyGitCommands` joins the deployer-only plain fields in the settings
-  namespace schema. It defaults to `true`, so existing deployments (including
+- `readOnlyGitCommands` is one of the settings namespace's volatile fields, so
+  it defaults to `true` and is exposed as a switch on the settings page
+  (`Tool classification` card). Existing deployments (including
   `cordis.patch.yml` files that never mention it) get the new behaviour on
-  upgrade and must set it to `false` to keep "shell always asks" in request
-  and auto-edit. It is not rendered on the settings page.
+  upgrade and must turn the switch off to keep "shell always asks" in request
+  and auto-edit. A deployer can still pin a `base` in `cordis.yml`; a user
+  override wins over that base, and the row's Reset falls back to it.
 - Request mode's documented contract narrows: "shell family requires
   approval" now has a read-only git exception. CONTEXT.md states it in the
   mode definitions rather than leaving it to the mode table.
@@ -75,10 +77,10 @@ the deployer's `readOnlyGitCommands` kill switch (default on).
   `[dsh-user-approval[read-only-git]] decision=allow detail=<subcommand>`, in
   every gated mode. The existing `[dsh-user-approval[smart]]` lines are
   unchanged, so existing greps keep working.
-- The client settings component needed a `FALLBACK` entry for the new field
-  (`Required<Config>` in `src/client/ApprovalModeSettings.tsx`) even though it
-  renders no control for it; the client bundle must be rebuilt alongside the
-  server one.
+- The client settings component needed a `FALLBACK` entry and `readValue` line
+  for the new field (`Required<Config>` in `src/client/ApprovalModeSettings.tsx`)
+  plus the switch row; the client bundle must be rebuilt alongside the server
+  one.
 - **Accepted ceiling (not closed):** `diff` / `log` / `show` / `blame` still
   execute a repository-configured textconv filter or external diff driver,
   because git does that itself and no command-text check can see it. We only
@@ -88,3 +90,14 @@ the deployer's `readOnlyGitCommands` kill switch (default on).
 - **Accepted boundary:** quoted arguments do not match, so `git log
   --format='%h %s'`, `git -C "a b" status` and git's `%(atom)` format syntax
   (`(` is rejected) keep asking. Fail-closed beats a quote-aware tokenizer.
+
+## Revision history
+
+- **Revision 1** (initial): `readOnlyGitCommands` was deployer-only (considered
+  option 4 above rejected the settings-page control on the ADR 0001/0002
+  boundary that keeps safety-floor knobs with the deployer). Revised after the
+  code shipped and was verified live: the plugin's owner asked for the switch in
+  the Web UI, so the field became `.volatile()` and gained a row on the settings
+  page. The trade-off is small — the switch only moves between "every shell call
+  asks" and "a strictly-parsed read-only git call does not" — and a deployer can
+  still pin the strict `base`.

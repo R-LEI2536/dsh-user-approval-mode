@@ -37,7 +37,7 @@ Tools that execute commands (`bash` / `pwsh` by default).
 Tools that only read state — exempt from approval in every mode (`read` / `glob` / `grep` / `read_image` / `list_directory` / `todo_write` / `reme_search` / `list_agents` / `job_list` / `get_goal` by default). `autoAllowTools` is checked before the family check, so `readOnly` is a fall-through exemption while `autoAllow` is an explicit one.
 
 **Read-only command fast-path**:
-The gate's command-level exemption: a single strictly-parsed read-only git invocation (`git status`, `git log`, `git diff`, …) is allowed without prompting even though it belongs to the shell family. It applies under request, auto-edit, and smart. It is fail-closed — anything the parser cannot establish as one non-writing, non-executing, non-network git invocation keeps asking — and it is the mirror image of the danger list: that one is a blocklist whose loose patterns only cost an extra prompt, this one is an allowlist where a loose match would be a silent grant, so it parses instead of pattern-matching. Under smart mode it sits after the danger list and before session memory and the classifier, so a danger-pattern hit always wins. Deployer kill switch: `readOnlyGitCommands` (default on).
+The gate's command-level exemption: a single strictly-parsed read-only git invocation (`git status`, `git log`, `git diff`, …) is allowed without prompting even though it belongs to the shell family. It applies under request, auto-edit, and smart. It is fail-closed — anything the parser cannot establish as one non-writing, non-executing, non-network git invocation keeps asking — and it is the mirror image of the danger list: that one is a blocklist whose loose patterns only cost an extra prompt, this one is an allowlist where a loose match would be a silent grant, so it parses instead of pattern-matching. Under smart mode it sits after the danger list and before session memory and the classifier, so a danger-pattern hit always wins. User-editable switch (settings page), also settable as the cordis `base`: `readOnlyGitCommands` (default on).
 _Avoid_: "git allowlist", "safe command list", "白名单" — the mechanism is a parser, not a set of patterns, and calling it a list invites the assumption that it can be widened by adding a name.
 
 **Other (family)**:
@@ -81,11 +81,11 @@ Template string for the approval dialog reason text. Supports `{tool}` / `{mode}
 The approval mode assigned to a new session when no override exists. Configured in `cordis.yml` entry config (field `default`); not exposed in the user settings page.
 
 **Settings namespace `dsh-user-approval-mode`**:
-The profile entry id under which the user-editable fields live: the eight
+The profile entry id under which the user-editable fields live: the nine
 `Volatile`-wrapped Config fields (`editTools`, `shellTools`,
-`readOnlyTools`, `autoAllowTools`, `sandboxDefaults`, `askReason`,
-`smartProvider`, `smartModel`) plus the deployer-only plain fields
-(`default`, `unclassified`, `readOnlyGitCommands`,
+`readOnlyTools`, `autoAllowTools`, `readOnlyGitCommands`, `sandboxDefaults`,
+`askReason`, `smartProvider`, `smartModel`) plus the deployer-only plain
+fields (`default`, `unclassified`,
 `smartExtraDangerPatterns`, `smartDangerPatterns`, `smartSessionMemory`,
 `smartSessionMemoryTtlMs`, `smartTimeoutMs`, `smartClassifierPrompt`). User edits persist to the
 profile's `cordis.patch.yml` user layer and apply live (no restart).

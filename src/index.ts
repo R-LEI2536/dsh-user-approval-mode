@@ -104,8 +104,9 @@ export interface Config {
   autoAllowTools?: string[]
   /** 未分类工具的策略：`ask`（默认，fail-safe）或 `allow`。 */
   unclassified?: 'ask' | 'allow'
-  /** 只读 git 命令免审快路径的总开关（默认 true）。严格解析后的单条只读
-   *  git 调用在 request/auto-edit/smart 下免审；置 false 恢复「shell 一律弹窗」。 */
+  /** 只读 git 命令免审快路径的开关（默认 true，设置页可改）。严格解析后的
+   *  单条只读 git 调用在 request/auto-edit/smart 下免审；关闭则恢复
+   *  「shell 一律弹窗」。 */
   readOnlyGitCommands?: boolean
   /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
   sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>
@@ -130,7 +131,7 @@ export interface Config {
 }
 
 /**
- * 运行时 Config：8 个设置页可编辑字段包在 `Volatile<T>` 引用里（live，随 profile
+ * 运行时 Config：9 个设置页可编辑字段包在 `Volatile<T>` 引用里（live，随 profile
  * user 层更新），其余 8 个部署方-only 字段为启动时定值的普通值。类型镜像
  * `Config` schema（含 `.volatile()` 链）的校验输出，apply 按此形状读配置。
  */
@@ -141,7 +142,7 @@ export interface VolatileConfig {
   readOnlyTools: Volatile<string[]>
   autoAllowTools: Volatile<string[]>
   unclassified: 'ask' | 'allow'
-  readOnlyGitCommands: boolean
+  readOnlyGitCommands: Volatile<boolean>
   sandboxDefaults: Volatile<Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>>
   askReason: Volatile<string>
   smartProvider: Volatile<string | null>
@@ -179,7 +180,8 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .description('Strategy for tools that fall in no family: "ask" (fail-safe, default) or "allow" (permissive).'),
   readOnlyGitCommands: Schema.boolean()
     .default(true)
-    .description('Auto-allow a single strictly-parsed read-only git command (git status, git log, git diff, …) in the shell family instead of prompting. Set false to restore "shell always asks" under request and auto-edit. Deployer-only; see docs/adr/0003-read-only-command-fast-path.md.'),
+    .description('Auto-allow a single strictly-parsed read-only git command (git status, git log, git diff, …) in the shell family instead of prompting. Turn it off to restore "shell always asks" under request and auto-edit. See docs/adr/0003-read-only-command-fast-path.md.')
+    .volatile(),
   sandboxDefaults: Schema.dict(Schema.union(['read-only', 'workspace-write', 'danger-full-access'] as ('read-only' | 'workspace-write' | 'danger-full-access')[]))
     .default({
       request: 'workspace-write',
@@ -247,7 +249,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     readOnlyTools: [...config.readOnlyTools.get()],
     autoAllowTools: [...config.autoAllowTools.get()],
     unclassified: config.unclassified,
-    readOnlyGitCommands: config.readOnlyGitCommands,
+    readOnlyGitCommands: config.readOnlyGitCommands.get(),
     sandboxDefaults: { ...config.sandboxDefaults.get() },
     askReason: config.askReason.get(),
     smartProvider: config.smartProvider.get(),

@@ -24,7 +24,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 - **Settings Page**: Configure approval-mode options (tool family lists, per-mode sandbox policy, approval prompt template, and smart-classifier provider/model) in `Settings → Approval Modes`. The default mode, the unclassified strategy, and most smart-mode internals remain deployer-only (set in `cordis.yml`).
 - **LLM Provider Reuse**: The Smart classifier reuses DSH's configured LLM provider and model; this plugin does not configure an endpoint, API key, or OpenAI-compatible protocol separately.
 - **Smart-mode shell classifier**: A five-step pipeline (danger list → read-only git fast-path → session memory → LLM classifier → fail-safe) auto-approves routine shell commands while keeping dangerous or unclear ones in front of the user.
-- **Read-only git fast-path**: A single strictly-parsed read-only git command (`git status`, `git log`, `git diff`, …) is exempt from approval in request, auto-edit, and smart, so the agent's highest-frequency shell calls stop prompting. Deployer kill switch: `readOnlyGitCommands`.
+- **Read-only git fast-path**: A single strictly-parsed read-only git command (`git status`, `git log`, `git diff`, …) is exempt from approval in request, auto-edit, and smart, so the agent's highest-frequency shell calls stop prompting. Switch it on the settings page (`readOnlyGitCommands`), or pin it in `cordis.yml`.
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
@@ -344,12 +344,13 @@ so styling or coloring parts of the template has no effect.
 ## Settings Page
 
 Open the Web UI sidebar → **Settings** → **Approval Modes** (last item, after
-Plugins) to edit the eight user-facing Config fields. The page header has a
+Plugins) to edit the nine user-facing Config fields. The page header has a
 short title and an intro paragraph; the page body is divided into three
 sub-sections:
 
 1. **Tool family classification** — one comma-separated text input per
-   family (`editTools`, `shellTools`, `readOnlyTools`, `autoAllowTools`).
+   family (`editTools`, `shellTools`, `readOnlyTools`, `autoAllowTools`),
+   plus a switch for the read-only git fast-path (`readOnlyGitCommands`).
    The values are treated as sets: order is irrelevant, duplicates are
    folded on commit.
 2. **Sandbox policy** — one dropdown per mode (`request`, `auto-edit`,
@@ -400,6 +401,7 @@ override (so the deployer's base re-emerges).
 | `shellTools` | comma-separated text (set) | Always require approval under request and auto-edit |
 | `readOnlyTools` | comma-separated text (set) | Always allowed (any mode) |
 | `autoAllowTools` | comma-separated text (set) | Bypass approval regardless of family |
+| `readOnlyGitCommands` | switch | Allow a strictly-parsed single read-only git command without prompting (default on) |
 | `sandboxDefaults` | per-mode dropdown | Sandbox policy when switching into each mode |
 | `askReason` | textarea | Approval dialog template (placeholders: `{tool}` / `{mode}` / `{family}`) |
 | `smartProvider` | text | LLM provider route for the smart classifier (leave empty to inherit host default) |
@@ -418,7 +420,7 @@ Deployer-only (not shown in the page; set in `cordis.yml`):
 
 ### Effect timing
 
-The eight user-editable fields are **live** — they take effect on the next
+The nine user-editable fields are **live** — they take effect on the next
 `tools/pre-execute` invocation, no DSH restart required. The runtime gate
 re-reads the live volatile Config on every tool call.
 
@@ -504,7 +506,7 @@ You can customize the plugin behavior in your agent preset:
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | Tools classified as "readonly" family (always allowed) |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | Tools that always bypass approval |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
-| `readOnlyGitCommands` | boolean | `true` | Allow a single strictly-parsed read-only git command instead of prompting (see [Read-only git commands](#read-only-git-commands)). Set `false` for "shell always asks" under request/auto-edit |
+| `readOnlyGitCommands` | boolean | `true` | Allow a single strictly-parsed read-only git command instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
 | `askReason` | string | *see default* | Custom message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders |
 | `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`) |
@@ -558,10 +560,11 @@ invocation. Everything else keeps asking:
   (`git branch foo`, `git tag v1`, `git stash`, `git remote add …`), the
   excluded `config` / `symbolic-ref` / `grep` / `cat-file`, and every network
   command (`fetch`, `pull`, `clone`, `ls-remote`, `remote show`).
-- **Kill switch** — `readOnlyGitCommands: false` in `cordis.yml` restores
-  "shell always asks" under request and auto-edit (and removes the shortcut
-  from smart mode). It is a deployer-only field and is not shown on the
-  settings page.
+- **Kill switch** — turn the `readOnlyGitCommands` switch off on the settings
+  page to restore "shell always asks" under request and auto-edit (and remove
+  the shortcut from smart mode). The same field can be pinned as a
+  deployer `base` in `cordis.yml`; a user override wins over that base, and
+  Reset on the row falls back to it.
 - **Logging** — every fast-path allowance writes
   `[dsh-user-approval[read-only-git]] decision=allow detail=<subcommand>` to
   the DSH log.

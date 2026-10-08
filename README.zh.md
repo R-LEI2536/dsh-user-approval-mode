@@ -22,7 +22,7 @@
 - **Web UI模式选择器**：输入框下方的快捷芯片，无需命令即可切换审批模式
 - **设置页面**：在 `设置 → 审批模式` 里配置审批选项（工具族名单、各模式 sandbox 策略、审批弹窗文案模板，以及 smart 分类器的 provider/model）。默认模式、未分类策略与 smart 内部细节仅由部署方配置（在 `cordis.yml` 中设置）。
 - **Smart 模式 shell 分类器**：五步流水线（危险清单 → 只读 git 快路径 → 会话记忆 → LLM 分类器 → fail-safe），自动放行例行 shell 命令，危险或不确定仍转人工。
-- **只读 git 快路径**：严格解析后的单条只读 git 命令（`git status`、`git log`、`git diff` 等）在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。总开关：`readOnlyGitCommands`。
+- **只读 git 快路径**：严格解析后的单条只读 git 命令（`git status`、`git log`、`git diff` 等）在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。设置页有开关（`readOnlyGitCommands`），也可在 `cordis.yml` 里钉 base。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
@@ -271,10 +271,11 @@ Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。
 ## 设置页面
 
 打开 Web UI 侧边栏 → **设置** → **审批模式**（最底部，Plugins 之后）即可
-编辑本插件暴露的八个用户可编辑 Config 字段。页面分为三个子区块：
+编辑本插件暴露的九个用户可编辑 Config 字段。页面分为三个子区块：
 
 1. **工具族分类** —— 每个族（`editTools`、`shellTools`、`readOnlyTools`、
-   `autoAllowTools`）一个逗号分隔的文本输入框。值按集合处理：顺序无
+   `autoAllowTools`）一个逗号分隔的文本输入框，外加只读 git 快路径的开关
+   （`readOnlyGitCommands`）。值按集合处理：顺序无
    所谓，提交时自动去重。
 2. **Sandbox 策略** —— 每个模式（`request`、`auto-edit`、`yolo`）一个
    下拉框。下拉标签在 `en` 与 `zh` 两种 locale 下都显示英文（值是与
@@ -314,6 +315,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `shellTools` | 逗号分隔文本（集合） | request / auto-edit 模式下都要审批 |
 | `readOnlyTools` | 逗号分隔文本（集合） | 任何模式都放行 |
 | `autoAllowTools` | 逗号分隔文本（集合） | 与族无关、直接绕过审批 |
+| `readOnlyGitCommands` | 开关 | 严格解析后的单条只读 git 命令免审（默认开） |
 | `sandboxDefaults` | 每模式下拉框 | 切到该模式时联动写入的 sandbox 策略 |
 | `askReason` | 多行文本 | 审批弹窗文案模板（占位符：`{tool}` / `{mode}` / `{family}`） |
 
@@ -324,7 +326,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 
 ### 生效时机
 
-八个用户可编辑字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，
+九个用户可编辑字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，
 无需重启 DSH。运行时闸门每次工具调用都会重读 live 的 volatile Config。
 
 ### 族名单之间的重叠
@@ -406,7 +408,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | 分类为"只读"族的工具（始终允许） |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | 始终绕过审批的工具 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
-| `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的单条只读 git 命令而不再弹窗（见[只读 git 命令](#只读-git-命令)）。设为 `false` 恢复 request/auto-edit 下「shell 一律弹窗」 |
+| `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的单条只读 git 命令而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
 | `askReason` | string | *见默认值* | 审批请求的自定义消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符 |
 | `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
@@ -454,9 +456,10 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
   形式（`git branch foo`、`git tag v1`、`git stash`、`git remote add …`）、
   被排除的 `config` / `symbolic-ref` / `grep` / `cat-file`，以及所有网络类
   （`fetch`、`pull`、`clone`、`ls-remote`、`remote show`）。
-- **总开关** —— `cordis.yml` 里 `readOnlyGitCommands: false` 恢复 request /
-  auto-edit 下「shell 一律弹窗」（同时移除 smart 模式的这条短路）。该字段
-  仅部署方可配，不出现在设置页。
+- **总开关** —— 在设置页把 `readOnlyGitCommands` 关掉，恢复 request /
+  auto-edit 下「shell 一律弹窗」（同时移除 smart 模式的这条短路）。同一字段
+  也可作为部署方 base 写在 `cordis.yml`；用户覆盖优先于 base，该行 Reset
+  则回落到 base。
 - **日志** —— 每次快路径放行都会写
   `[dsh-user-approval[read-only-git]] decision=allow detail=<子命令>`。
 - **已知天花板** —— `diff` / `log` / `show` / `blame` 在仓库配置了 textconv

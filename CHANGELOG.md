@@ -29,20 +29,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the excluded `config` / `symbolic-ref` / `grep` / `cat-file` / network
   commands.
 
-  New deployer-only field `readOnlyGitCommands` (default `true`) restores
-  "shell always asks" under request and auto-edit when set to `false`; it is
-  not exposed on the settings page (safety-floor knobs stay deployer-owned,
-  per ADR 0002). Each allowance is logged as
+  A new **Read-only git commands** switch (`readOnlyGitCommands`, default on)
+  on the settings page turns the fast-path off, which restores "shell always
+  asks" under request and auto-edit; a deployer can also pin it as a `base` in
+  `cordis.yml`, and a user override wins over that base. Each allowance is
+  logged as
   `[dsh-user-approval[read-only-git]] decision=allow detail=<subcommand>`;
   the existing `[smart]` decision lines are unchanged. Rationale, the rejected
-  alternatives (regex allowlist, configurable list, settings-page field) and
+  alternatives (regex allowlist, configurable list) and
   the accepted textconv/`--ext-diff` ceiling are in
   `docs/adr/0003-read-only-command-fast-path.md`.
 
   Because the field defaults to `true`, an existing deployment that never
   mentions it gets the new behaviour on upgrade. Since request mode's
   documented contract ("the shell family requires approval") now narrows, a
-  deployment that wants the old strictness must pin
+  deployment that wants the old strictness must turn the switch off or pin
   `readOnlyGitCommands: false` in its own `cordis.yml`.
 
 ### Changed
