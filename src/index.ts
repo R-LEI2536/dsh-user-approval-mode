@@ -11,6 +11,11 @@
  * - `yolo`     全部放行（不发起审批），sandbox 联动到配置默认（workspace-write）。
  * - `off`      关闭模式系统，恢复官方原版行为（闸不拦截任何调用）。
  *
+ * 只读 git 命令快路径（`readOnlyGitCommands`，默认开）：在 request /
+ * auto-edit / smart 下，严格解析后的单条只读 git 调用免审。解析规则与
+ * 已知天花板见 src/read-only-git.ts 与
+ * docs/adr/0003-read-only-command-fast-path.md。
+ *
  * 切换模式（`/approval-mode <mode>`）时联动写入 `sandbox/mode`：
  * request/auto-edit/yolo → 配置默认（默认 workspace-write）；off → 组合默认。
  * 三个旋钮（approval/mode、sandbox/mode、approval/policy）互相独立、last-write-wins。
@@ -37,6 +42,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-commands'
 import {
+  commandFromArguments,
   compileSmartDangerPatterns,
   createSmartSessionMemory,
   createSmartShellEvaluator,
@@ -46,6 +52,7 @@ import {
   type SmartDefaultModelService,
   type SmartSessionMemory,
 } from './smart-classifier.js'
+import { matchReadOnlyGitCommand } from './read-only-git.js'
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
 import {
   findAskPresetForSandbox,
@@ -97,6 +104,9 @@ export interface Config {
   autoAllowTools?: string[]
   /** 未分类工具的策略：`ask`（默认，fail-safe）或 `allow`。 */
   unclassified?: 'ask' | 'allow'
+  /** 只读 git 命令免审快路径的总开关（默认 true）。严格解析后的单条只读
+   *  git 调用在 request/auto-edit/smart 下免审；置 false 恢复「shell 一律弹窗」。 */
+  readOnlyGitCommands?: boolean
   /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
   sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>
   /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。 */
@@ -131,6 +141,7 @@ export interface VolatileConfig {
   readOnlyTools: Volatile<string[]>
   autoAllowTools: Volatile<string[]>
   unclassified: 'ask' | 'allow'
+  readOnlyGitCommands: boolean
   sandboxDefaults: Volatile<Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>>
   askReason: Volatile<string>
   smartProvider: Volatile<string | null>
@@ -166,6 +177,9 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
   unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])
     .default('ask')
     .description('Strategy for tools that fall in no family: "ask" (fail-safe, default) or "allow" (permissive).'),
+  readOnlyGitCommands: Schema.boolean()
+    .default(true)
+    .description('Auto-allow a single strictly-parsed read-only git command (git status, git log, git diff, …) in the shell family instead of prompting. Set false to restore "shell always asks" under request and auto-edit. Deployer-only; see docs/adr/0003-read-only-command-fast-path.md.'),
   sandboxDefaults: Schema.dict(Schema.union(['read-only', 'workspace-write', 'danger-full-access'] as ('read-only' | 'workspace-write' | 'danger-full-access')[]))
     .default({
       request: 'workspace-write',
@@ -233,6 +247,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     readOnlyTools: [...config.readOnlyTools.get()],
     autoAllowTools: [...config.autoAllowTools.get()],
     unclassified: config.unclassified,
+    readOnlyGitCommands: config.readOnlyGitCommands,
     sandboxDefaults: { ...config.sandboxDefaults.get() },
     askReason: config.askReason.get(),
     smartProvider: config.smartProvider.get(),
@@ -297,6 +312,18 @@ export function apply(ctx: Context, config: VolatileConfig): void {
   const modelSuffix = (selection?: { provider: string; model: string }): string =>
     selection === undefined ? '' : ` model=${selection.model} provider=${selection.provider}`
 
+  // Logger for the read-only git fast-path. Same posture as
+  // `logSmartDecision` (a broken logger must never change an outcome), but a
+  // distinct tag so it is greppable on its own and does not disturb the
+  // existing `[dsh-user-approval[smart]]` decision lines.
+  const logReadOnlyGitAllow = (subcommand: string): void => {
+    try {
+      ctx.logger.info(`[dsh-user-approval[read-only-git]] decision=allow detail=${subcommand}`)
+    } catch {
+      // Swallow logger failures; the decision has already been computed.
+    }
+  }
+
   // ── Smart-mode evaluator lifecycle ────────────────────────────────────────
   // The classifier is only useful when smart mode is in play, but the
   // evaluator state (compiled patterns, session memory, AbortController)
@@ -318,6 +345,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       smartClassifierPrompt: cfg.smartClassifierPrompt ?? DEFAULT_SMART_CLASSIFIER_PROMPT,
       smartProvider: cfg.smartProvider ?? null,
       smartModel: cfg.smartModel ?? null,
+      readOnlyGitCommands: cfg.readOnlyGitCommands ?? true,
     }
     const patterns = compileSmartDangerPatterns(smartCfg.smartDangerPatterns, smartCfg.smartExtraDangerPatterns)
     // Cast to our narrower `SmartLlmService` — the host's LlmRuntime.stream
@@ -351,7 +379,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
   // ── 闸：每个工具调用分发前裁决 ─────────────────────────────────────────
   // 先 next() 取下游裁决再决定：下游 deny/ask 保持，只有下游 allow 且本模式
   // 要求弹时才升级为 ask；off/yolo 原样放行（= 官方原版）。
-  // Smart 模式下 shell 族在闸里额外走 4 步裁决（详见 smart-classifier.ts）。
+  // Smart 模式下 shell 族在闸里额外走 5 步裁决（详见 smart-classifier.ts）。
   ctx.on('tools/pre-execute', async (exec, next) => {
     const decision = await next()
     if (decision.kind !== 'allow') return decision
@@ -364,9 +392,18 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     const family = familyOf(exec.name)
     if (family === 'readonly') return decision
 
-    // Smart 模式 + shell 族：先做提权拦截，再走 4 步裁决流水线（危险清单
-    // → 会话记忆 → LLM 分类器 → fail-safe）。提权强制 ask，分类器
-    // 永远不会代决 sandbox 升级——即使下游 preset 配成 auto-allow。
+    // 只读 git 快路径：request / auto-edit 下把「严格解析后的单条只读 git
+    // 调用」当作免审。开关关闭时不解析。smart 分支不在这里判——快路径在
+    // evaluator 内的危险清单之后，才能保证危险清单是硬地板（见
+    // docs/adr/0003-read-only-command-fast-path.md）。
+    const gitSubcommand = family === 'shell' && mode !== 'smart' && cfg.readOnlyGitCommands !== false
+      ? matchReadOnlyGitCommand(commandFromArguments(exec.arguments))
+      : undefined
+
+    // Smart 模式 + shell 族：先做提权拦截，再走裁决流水线（危险清单
+    // → 只读 git 快路径 → 会话记忆 → LLM 分类器 → fail-safe）。提权强制
+    // ask，分类器与快路径都不会代决 sandbox 升级——即使下游 preset 配成
+    // auto-allow。
     if (mode === 'smart' && family === 'shell') {
       const escalation = getSandboxEscalation(exec.arguments)
       if (escalation !== undefined) {
@@ -384,6 +421,10 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       }
       const verdict = await smartEvaluator(exec, agent.session)
       if (verdict.kind === 'allow') {
+        if (verdict.source === 'read-only-git') {
+          logReadOnlyGitAllow(verdict.subcommand)
+          return { kind: 'allow' }
+        }
         logSmartDecision('allow', `detail=${verdict.source}${modelSuffix(verdict.selection)}`)
         return { kind: 'allow' }
       }
@@ -396,6 +437,11 @@ export function apply(ctx: Context, config: VolatileConfig): void {
           .replace('{family}', family)
           + (verdict.detail ? ` [smart: ${verdict.detail}]` : ''),
       }
+    }
+
+    if (gitSubcommand !== undefined) {
+      logReadOnlyGitAllow(gitSubcommand)
+      return { kind: 'allow' }
     }
 
     if (!needsAsk(mode, family)) return decision

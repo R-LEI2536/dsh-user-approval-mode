@@ -9,13 +9,13 @@ The strategic stance a session runs under. Drives the gate at `tools/pre-execute
 _Avoid_: "permission mode", "policy mode"
 
 **Request mode**:
-Strictest. Edit family, shell family, and unclassified tools all require approval; read-only family exempt.
+Strictest. Edit family, shell family, and unclassified tools all require approval; read-only family exempt, and a read-only git command is exempt via the read-only command fast-path.
 
 **Auto-edit mode**:
-Edit family auto-approved; shell family and unclassified require approval; read-only family exempt.
+Edit family auto-approved; shell family and unclassified require approval; read-only family exempt, and a read-only git command is exempt via the read-only command fast-path.
 
 **Smart mode**:
-The shell upgrade of auto-edit. Edit family auto-approved; read-only family exempt; `other` family follows `unclassified`. Shell family is routed through a four-step pipeline (danger list → session memory → LLM classifier → fail-safe) — dangerous commands are forwarded to manual review; approved calls are auto-allowed and remembered for the session's TTL; timeout / protocol errors / non-approve verdicts always fall back to manual review.
+The shell upgrade of auto-edit. Edit family auto-approved; read-only family exempt; `other` family follows `unclassified`. Shell family is routed through a five-step pipeline (danger list → read-only command fast-path → session memory → LLM classifier → fail-safe) — dangerous commands are forwarded to manual review; approved calls are auto-allowed and remembered for the session's TTL; timeout / protocol errors / non-approve verdicts always fall back to manual review.
 
 **Yolo mode**:
 No approvals required; every tool executes without prompt.
@@ -36,6 +36,10 @@ Tools that execute commands (`bash` / `pwsh` by default).
 **Read-only family**:
 Tools that only read state — exempt from approval in every mode (`read` / `glob` / `grep` / `read_image` / `list_directory` / `todo_write` / `reme_search` / `list_agents` / `job_list` / `get_goal` by default). `autoAllowTools` is checked before the family check, so `readOnly` is a fall-through exemption while `autoAllow` is an explicit one.
 
+**Read-only command fast-path**:
+The gate's command-level exemption: a single strictly-parsed read-only git invocation (`git status`, `git log`, `git diff`, …) is allowed without prompting even though it belongs to the shell family. It applies under request, auto-edit, and smart. It is fail-closed — anything the parser cannot establish as one non-writing, non-executing, non-network git invocation keeps asking — and it is the mirror image of the danger list: that one is a blocklist whose loose patterns only cost an extra prompt, this one is an allowlist where a loose match would be a silent grant, so it parses instead of pattern-matching. Under smart mode it sits after the danger list and before session memory and the classifier, so a danger-pattern hit always wins. Deployer kill switch: `readOnlyGitCommands` (default on).
+_Avoid_: "git allowlist", "safe command list", "白名单" — the mechanism is a parser, not a set of patterns, and calling it a list invites the assumption that it can be widened by adding a name.
+
 **Other (family)**:
 Tools that fall in no configured family; behavior controlled by the `unclassified` strategy.
 
@@ -47,7 +51,7 @@ _Avoid_: "classification set", "category list"
 Tool names that bypass approval regardless of family classification (`ask_user_question` / `exit_plan_mode` plus the control-and-orchestration tools `job_output` / `skill` / `subagent` / `present` / `wait_agent` / `send_message` / `team_task_update` / `team_task_list` by default). Checked BEFORE family lookup, so overlap with any family list is harmless (redundant, not conflicting). These four lists are the plugin's schema defaults (`src/index.ts`), pinned by `test/tool-family-defaults.test.ts`.
 
 **Smart classifier pipeline** (smart mode, shell family only):
-The four ordered steps the smart-mode shell classifier runs on every shell call: (1) **danger list** — a deterministic regex set; any match hands off to manual review before the LLM is consulted. (2) **session memory** — a per-session `sha256(toolName + rawArguments)` map; a hit auto-approves without re-running the classifier. (3) **LLM classifier** — one-shot chat call to a configurable LLM returning `{"verdict":"approve"}` or `{"verdict":"ask"}`; only `approve` auto-allows. (4) **fail-safe fallback** — every unexpected outcome (timeout, protocol violation, missing seam, exception, non-approve verdict) routes to manual review. One additional guard sits after step 2 and before step 3: when the newest genuine user message exceeds the 2000-character budget, the gate short-circuits with `detail=latest-user-message-too-long` and skips the LLM call — session memory still wins because the guard is positioned AFTER the memory lookup, mirroring `dsh-auto-approve`.
+The five ordered steps the smart-mode shell classifier runs on every shell call: (1) **danger list** — a deterministic regex set; any match hands off to manual review before the LLM is consulted. (2) **read-only command fast-path** — a strictly-parsed single read-only git invocation auto-approves here, without consulting session memory or the LLM; it is ordered after the danger list so a configured pattern can never be bypassed by it. (3) **session memory** — a per-session `sha256(toolName + rawArguments)` map; a hit auto-approves without re-running the classifier. (4) **LLM classifier** — one-shot chat call to a configurable LLM returning `{"verdict":"approve"}` or `{"verdict":"ask"}`; only `approve` auto-allows. (5) **fail-safe fallback** — every unexpected outcome (timeout, protocol violation, missing seam, exception, non-approve verdict) routes to manual review. One additional guard sits after step 3 and before step 4: when the newest genuine user message exceeds the 2000-character budget, the gate short-circuits with `detail=latest-user-message-too-long` and skips the LLM call — session memory still wins because the guard is positioned AFTER the memory lookup, mirroring `dsh-auto-approve`.
 
 **Danger list**:
 The 13 built-in regex sources in `src/smart-danger-patterns.ts` (`rm -rf /`, `dd of=/dev/`, `mkfs`, force-push, `curl|sh`, drop database, `truncate`, `shutdown`/`reboot`/`halt`, `chmod -R 777 /`, fork bomb, `terraform`/`pulumi destroy`). Compiled case-insensitively at startup; the deployer may append `smartExtraDangerPatterns` via cordis, or replace the built-ins entirely via `smartDangerPatterns: string[] | null` (`null` keeps built-ins; non-null replaces). Both knobs are deployer-only and are not exposed in the settings page.
@@ -81,9 +85,9 @@ The profile entry id under which the user-editable fields live: the eight
 `Volatile`-wrapped Config fields (`editTools`, `shellTools`,
 `readOnlyTools`, `autoAllowTools`, `sandboxDefaults`, `askReason`,
 `smartProvider`, `smartModel`) plus the deployer-only plain fields
-(`default`, `unclassified`, `smartExtraDangerPatterns`,
-`smartDangerPatterns`, `smartSessionMemory`, `smartSessionMemoryTtlMs`,
-`smartTimeoutMs`, `smartClassifierPrompt`). User edits persist to the
+(`default`, `unclassified`, `readOnlyGitCommands`,
+`smartExtraDangerPatterns`, `smartDangerPatterns`, `smartSessionMemory`,
+`smartSessionMemoryTtlMs`, `smartTimeoutMs`, `smartClassifierPrompt`). User edits persist to the
 profile's `cordis.patch.yml` user layer and apply live (no restart).
 Resolution order: schema defaults → cordis `base` (deployer's
 cordis.yml/patch) → user layer. The client binds it via
@@ -91,7 +95,7 @@ cordis.yml/patch) → user layer. The client binds it via
 (distinct from the entry id).
 
 **Tool classification order**:
-The full priority chain at the gate: `autoAllowTools` first, then `editTools`, then `shellTools`, then `readOnlyTools`, then `unclassified` strategy.
+The full priority chain at the gate: `autoAllowTools` first, then `editTools`, then `shellTools`, then `readOnlyTools`, then `unclassified` strategy. A shell-family call additionally passes the read-only command fast-path before the mode's verdict is applied.
 
 ## Settings UI surface
 

@@ -40,7 +40,7 @@ interface HarnessOptions {
 }
 
 interface Harness {
-  evaluate: (exec: ExecStub) => Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; selection?: { provider: string; model: string } }>
+  evaluate: (exec: ExecStub) => Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; subcommand?: string; selection?: { provider: string; model: string } }>
   memory: SmartSessionMemory
   streamCalls: number
   lastSelection: { provider: string; model: string } | undefined
@@ -56,6 +56,7 @@ const baseConfig: SmartEvaluatorConfig = {
   smartClassifierPrompt: 'mock prompt',
   smartProvider: 'mock-provider',
   smartModel: 'mock-model',
+  readOnlyGitCommands: true,
 }
 
 function textStream(text: string): AsyncIterable<unknown> {
@@ -136,7 +137,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     evaluate: async (exec) => evaluator(
       { name: exec.name, arguments: exec.arguments },
       sessionStub as never,
-    ) as unknown as Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; selection?: { provider: string; model: string } }>,
+    ) as unknown as Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; subcommand?: string; selection?: { provider: string; model: string } }>,
     memory,
     get streamCalls() { return streamCalls.value },
     get lastSelection() { return lastSelectionRef.value },
@@ -159,6 +160,39 @@ test('evaluator: danger pattern in `arguments` is detected, even without a reaso
   assert.equal(verdict.kind, 'ask')
   assert.match(verdict.detail ?? '', /^pattern=/)
   assert.equal(h.streamCalls, 0)
+})
+
+test('evaluator: read-only git fast-path approves without an LLM call', async () => {
+  // No LLM seam at all: the fast-path must not depend on it.
+  const h = makeHarness({ llmAvailable: false })
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'git status --short' } })
+  assert.deepEqual(verdict, { kind: 'allow', source: 'read-only-git', subcommand: 'status' })
+  assert.equal(h.streamCalls, 0)
+})
+
+test('evaluator: the danger list still wins over the read-only git fast-path', async () => {
+  // A deployer can add a pattern that matches a read-only command; the
+  // fast-path is positioned after the danger list, so the pattern wins.
+  const h = makeHarness({ configOverrides: { smartExtraDangerPatterns: ['\\bgit\\b'] } })
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'git status' } })
+  assert.deepEqual(verdict, { kind: 'ask', detail: 'pattern=\\bgit\\b' })
+  assert.equal(h.streamCalls, 0)
+})
+
+test('evaluator: the fast-path can be switched off', async () => {
+  const h = makeHarness({ configOverrides: { readOnlyGitCommands: false }, llmAvailable: false })
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'git status' } })
+  assert.equal(verdict.kind, 'ask')
+  assert.equal(verdict.detail, 'llm-unavailable')
+})
+
+test('evaluator: a chained command is not a fast-path match', async () => {
+  const h = makeHarness({ llmAvailable: false })
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'git status && rm -rf /' } })
+  assert.equal(verdict.kind, 'ask')
+  // The built-in danger list catches the `rm` half before the fast-path is
+  // ever consulted, so this also pins the ordering.
+  assert.match(verdict.detail ?? '', /^pattern=/)
 })
 
 test('evaluator: session memory hit approves without calling the LLM', async () => {

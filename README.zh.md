@@ -21,7 +21,8 @@
 - **五种审批模式**：`request`、`auto-edit`、`smart`（新增）、`yolo`、`off`
 - **Web UI模式选择器**：输入框下方的快捷芯片，无需命令即可切换审批模式
 - **设置页面**：在 `设置 → 审批模式` 里配置审批选项（工具族名单、各模式 sandbox 策略、审批弹窗文案模板，以及 smart 分类器的 provider/model）。默认模式、未分类策略与 smart 内部细节仅由部署方配置（在 `cordis.yml` 中设置）。
-- **Smart 模式 shell 分类器**：四步流水线（危险清单 → 会话记忆 → LLM 分类器 → fail-safe），自动放行例行 shell 命令，危险或不确定仍转人工。
+- **Smart 模式 shell 分类器**：五步流水线（危险清单 → 只读 git 快路径 → 会话记忆 → LLM 分类器 → fail-safe），自动放行例行 shell 命令，危险或不确定仍转人工。
+- **只读 git 快路径**：严格解析后的单条只读 git 命令（`git status`、`git log`、`git diff` 等）在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。总开关：`readOnlyGitCommands`。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
@@ -34,26 +35,28 @@
 
 | 模式 | 编辑工具 | Shell 工具 | 其他工具 | 只读工具 | 使用场景 |
 |------|---------|-----------|---------|---------|----------|
-| `request` | 需审批 | 需审批 | 需审批 | 允许 | 最高安全性，所有修改都需要审批 |
-| `auto-edit` | 允许 | 需审批 | 需审批 | 允许 | 平衡模式，自动编辑文件但监控 Shell |
-| `smart` | 允许 | 分类器（4 步流水线） | 需审批 | 允许 | 例行 shell 自动放行，危险或不确定仍转人工 |
+| `request` | 需审批 | 需审批 ¹ | 需审批 | 允许 | 最高安全性，所有修改都需要审批 |
+| `auto-edit` | 允许 | 需审批 ¹ | 需审批 | 允许 | 平衡模式，自动编辑文件但监控 Shell |
+| `smart` | 允许 | 分类器（5 步流水线）¹ | 需审批 | 允许 | 例行 shell 自动放行，危险或不确定仍转人工 |
 | `yolo` | 允许 | 允许 | 允许 | 允许 | 无需审批，完全自动化 |
 | `off` | 允许 | 允许 | 允许 | 允许 | 禁用，恢复 DSH 默认行为 |
+
+¹ 例外：严格解析后的单条只读 git 命令（`git status`、`git log`、`git diff` 等）在这三个模式下免审直放——见[只读 git 命令](#只读-git-命令)。
 
 ### 模式详情
 
 #### `request` - 最高安全性
-- **行为**：所有编辑、Shell 和未分类工具都需要审批
+- **行为**：所有编辑、Shell 和未分类工具都需要审批，只读 git 命令除外（快路径）
 - **沙箱**：自动切换到 `workspace-write`
 - **使用场景**：高安全环境、生产系统或处理关键文件时
 
 #### `auto-edit` - 平衡模式
-- **行为**：编辑工具自动批准，Shell 和未分类工具需要审批
+- **行为**：编辑工具自动批准，Shell 和未分类工具需要审批，只读 git 命令除外（快路径）
 - **沙箱**：自动切换到 `workspace-write`
 - **使用场景**：开发环境，信任文件修改但需要监控 Shell 命令
 
 #### `smart` - Shell 分类器（新增）
-- **行为**：编辑工具自动批准；shell 工具走 4 步流水线（危险清单 → 会话记忆 → LLM 分类器 → fail-safe）；未分类工具仍需审批；只读免审。批准过的调用在 `smartSessionMemoryTtlMs`（默认 30 分钟）内被会话记忆复用。
+- **行为**：编辑工具自动批准；shell 工具走 5 步流水线（危险清单 → 只读 git 快路径 → 会话记忆 → LLM 分类器 → fail-safe）；未分类工具仍需审批；只读免审。批准过的调用在 `smartSessionMemoryTtlMs`（默认 30 分钟）内被会话记忆复用。
 - **沙箱**：自动切换到 `workspace-write`
 - **使用场景**：长流程设置循环，shell 命令多是例行的，审批会中断节奏。危险或不确定的 shell 仍弹给用户；危险清单是先于 LLM 的硬底。
 - **风险**：LLM 可能误判。危险清单无法枚举所有破坏性模式。插件重载通过 `AbortController` 终止在飞的分类调用。详见 Known Limitations 中的 "Smart Mode Risks"。
@@ -232,7 +235,7 @@ DSH 在 `0.1.0-rc.7` 版本中对 `ctx.remote.commands.execute()` API 进行了�
 Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。分类器是「尽力而为」的加速器，不是安全边界。具体：
 
 - **LLM 可能误判。** 分类器可能把危险命令错认成例行而放行。13 条正则的危险清单作为硬底先于 LLM 跑（`rm -rf /`、`mkfs`、`curl|sh`、fork bomb 等），但无法枚举所有破坏性模式。仅在「最坏情况可恢复」的环境下使用 smart 模式。
-- **没有「为何放行」的可见性。** 分类器批准时，用户看不到提示，也看不到日志。每次工具的 evidence（`toolName`、`command`、`arguments`、`workspacePath`、`latestUserMessage`）只在 LLM 请求 payload 里。
+- **没有「为何放行」的弹窗可见性。** 分类器或只读 git 快路径放行时，用户看不到提示；理由只落在 DSH 日志里（`[dsh-user-approval[smart]] decision=allow …`、`[dsh-user-approval[read-only-git]] decision=allow …`），分类器批准的 evidence 另在 LLM 请求 payload 里。
 - **会话记忆只在进程内。** 记忆是 `Map<sha256(toolName + rawArguments), ...>` 的内存结构；DSH 重启即清空。重启后每个 shell 命令首跑都要重新付一次 LLM 成本。
 - **成本按唯一 shell 调用计。** 每条 shell 命令首次跑消耗一次 LLM 调用；TTL 内的重复免费。若用户没填 `smartProvider`/`smartModel`，host 默认沿用主对话模型，成本会偏高——选轻量模型降本。
 - **并发受 `smartSessionMemory` 容量限制。** 记忆按会话隔离，FIFO 上限 200 条；长会话周期性地把旧批准循环出去，那部分会重付 LLM 成本。
@@ -403,6 +406,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | 分类为"只读"族的工具（始终允许） |
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | 始终绕过审批的工具 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
+| `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的单条只读 git 命令而不再弹窗（见[只读 git 命令](#只读-git-命令)）。设为 `false` 恢复 request/auto-edit 下「shell 一律弹窗」 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
 | `askReason` | string | *见默认值* | 审批请求的自定义消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符 |
 | `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
@@ -428,15 +432,49 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
 | **只读** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents`, `job_list`, `get_goal` | 安全浏览工具（始终允许） |
 | **其他** | *所有其他工具* | 未分类工具，行为取决于 `unclassified` 配置 |
 
+### 只读 git 命令
+
+代理日常的 shell 调用里有很大一部分是只读的 git 查看（`git status`、
+`git log`、`git diff` 等）。它们属于 Shell 族，于是 request / auto-edit 每条都
+弹窗，smart 每条都花一次 LLM 调用。**只读命令快路径**把它们豁免掉。
+
+只有「单条、严格解析后的只读 git 调用」才豁免，其余一律照旧弹窗：
+
+- **放行形式** —— `git status`、`git log`、`git diff`、`git show`、
+  `git rev-parse`、`git rev-list`、`git describe`、`git shortlog`、
+  `git show-ref`、`git for-each-ref`、`git ls-files`、`git ls-tree`、
+  `git blame`、`git name-rev`、`git merge-base`、`git count-objects`，以及
+  `git branch` / `git tag` / `git remote`（`-v`、`get-url`）/
+  `git stash list|show` / `git worktree list` / `git submodule status|summary`
+  的列表形式。允许 `git -C <path>` 与 `--no-pager` 前缀。
+- **永不放行** —— 任何组合或重定向（`&&`、`;`、`|`、`>`、`$(…)`、反引号）、
+  任何带引号、被包装（`sudo`、`env`、`sh -c`）或带环境变量前缀的命令、任何
+  配置/路径类全局选项（`-c`、`--config-env`、`--exec-path`、`--git-dir`、
+  `--work-tree`）、`--output*` / `--ext-diff` / `--textconv`、上述子命令的写
+  形式（`git branch foo`、`git tag v1`、`git stash`、`git remote add …`）、
+  被排除的 `config` / `symbolic-ref` / `grep` / `cat-file`，以及所有网络类
+  （`fetch`、`pull`、`clone`、`ls-remote`、`remote show`）。
+- **总开关** —— `cordis.yml` 里 `readOnlyGitCommands: false` 恢复 request /
+  auto-edit 下「shell 一律弹窗」（同时移除 smart 模式的这条短路）。该字段
+  仅部署方可配，不出现在设置页。
+- **日志** —— 每次快路径放行都会写
+  `[dsh-user-approval[read-only-git]] decision=allow detail=<子命令>`。
+- **已知天花板** —— `diff` / `log` / `show` / `blame` 在仓库配置了 textconv
+  过滤器或外部 diff 驱动时仍会执行那个外部程序，因为这是 git 自己的行为、
+  命令文本判不出来。只有显式的 `--ext-diff` / `--textconv` 会被拒。理由与
+  被否决的替代方案见
+  [ADR 0003](docs/adr/0003-read-only-command-fast-path.md)。
+
 ## 工作原理
 
 1. **工具执行拦截**：插件监听 `tools/pre-execute` 事件
 2. **族分类**：确定工具属于哪个族
-3. **模式检查**：评估当前审批模式
-4. **决策**：对需要审批的工具返回 `{ kind: 'ask' }`，或允许执行
-5. **沙箱同步**：切换模式时自动调整沙箱策略
-6. **状态存储**：审批模式使用内存存储（WeakMap），DSH 重启后恢复默认
-7. **UI同步**：Web UI 芯片通过 React 管理状态，刷新时从服务器同步
+3. **只读快路径**：属于 shell 族、但内容为严格解析后的单条只读 git 命令的调用，直接放行
+4. **模式检查**：评估当前审批模式
+5. **决策**：对需要审批的工具返回 `{ kind: 'ask' }`，或允许执行
+6. **沙箱同步**：切换模式时自动调整沙箱策略
+7. **状态存储**：审批模式使用内存存储（WeakMap），DSH 重启后恢复默认
+8. **UI同步**：Web UI 芯片通过 React 管理状态，刷新时从服务器同步
 
 ## 依赖
 
