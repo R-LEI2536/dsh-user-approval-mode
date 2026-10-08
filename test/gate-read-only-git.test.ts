@@ -113,6 +113,15 @@ test('gate: smart mode still asks when the git command requests a sandbox escala
 test('gate: off mode is untouched (no ask, no fast-path log)', async () => {
   const gate = makeGate('off')
   assert.deepEqual(await gate.decide('git push origin main'), { kind: 'allow' })
+  // A read-only command must not log or rebuild the downstream decision
+  // either: off is "the gate does not intercept anything".
+  assert.deepEqual(await gate.decide('git status'), { kind: 'allow' })
+  assert.deepEqual(gate.logs, [])
+})
+
+test('gate: yolo mode is untouched by the fast-path', async () => {
+  const gate = makeGate('yolo')
+  assert.deepEqual(await gate.decide('git status'), { kind: 'allow' })
   assert.deepEqual(gate.logs, [])
 })
 

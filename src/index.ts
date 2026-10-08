@@ -392,11 +392,11 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     const family = familyOf(exec.name)
     if (family === 'readonly') return decision
 
-    // 只读 git 快路径：request / auto-edit 下把「严格解析后的单条只读 git
-    // 调用」当作免审。开关关闭时不解析。smart 分支不在这里判——快路径在
-    // evaluator 内的危险清单之后，才能保证危险清单是硬地板（见
-    // docs/adr/0003-read-only-command-fast-path.md）。
-    const gitSubcommand = family === 'shell' && mode !== 'smart' && cfg.readOnlyGitCommands !== false
+    // 只读 git 快路径：只在 shell 族本来会被拦的两个模式下有意义。
+    // off / yolo 必须原样返回下游 decision（不重建对象、不写日志）；
+    // smart 在 evaluator 内自行处理（见 docs/adr/0003）。
+    const shellWouldAsk = mode === 'request' || mode === 'auto-edit'
+    const gitSubcommand = shellWouldAsk && family === 'shell' && cfg.readOnlyGitCommands !== false
       ? matchReadOnlyGitCommand(commandFromArguments(exec.arguments))
       : undefined
 
