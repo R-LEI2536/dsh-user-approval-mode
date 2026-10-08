@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Read-only git commands are auto-allowed in every gated mode** — the agent
+  spends a large share of its shell calls on `git status` / `git log` /
+  `git diff` and friends, which are read-only but belong to the shell family,
+  so `request` and `auto-edit` prompted on every one of them and `smart` paid
+  an LLM call for them. A new **read-only command fast-path**
+  (`src/read-only-git.ts`) allows a *single strictly-parsed* read-only git
+  invocation without prompting, and the smart pipeline skips session memory
+  and the classifier for it. Ordering is deliberate: in smart mode the
+  fast-path runs after the danger list but before memory and the LLM call
+  (inside the evaluator, not the gate), so a deployer-configured
+  `smartExtraDangerPatterns` entry still wins, and the sandbox-escalation
+  guard still intercepts a widening `sandbox_permissions` request first.
+
+  Everything else keeps asking: composed/redirected/quoted commands, wrapper
+  prefixes (`sudo`, `env`, `sh -c`), config and path global options (`-c`,
+  `--git-dir`, `--exec-path`, `--work-tree`), `--output*` / `--ext-diff` /
+  `--textconv`, the writing forms of `branch` / `tag` / `stash` / `remote`,
+  and the excluded `config` / `symbolic-ref` / `grep` / `cat-file` / network
+  commands.
+
+  A new **Read-only git commands** switch (`readOnlyGitCommands`, default on)
+  on the settings page turns the fast-path off, which restores "shell always
+  asks" under request and auto-edit; a deployer can also pin it as a `base` in
+  `cordis.yml`, and a user override wins over that base. Each allowance is
+  logged as
+  `[dsh-user-approval[read-only-git]] decision=allow detail=<subcommand>`;
+  the existing `[smart]` decision lines are unchanged. Rationale, the rejected
+  alternatives (regex allowlist, configurable list) and
+  the accepted textconv/`--ext-diff` ceiling are in
+  `docs/adr/0003-read-only-command-fast-path.md`.
+
+  Because the field defaults to `true`, an existing deployment that never
+  mentions it gets the new behaviour on upgrade. Since request mode's
+  documented contract ("the shell family requires approval") now narrows, a
+  deployment that wants the old strictness must turn the switch off or pin
+  `readOnlyGitCommands: false` in its own `cordis.yml`.
+
 ### Changed
 
 - **The common DSH tool surface is now the shipped default** — the four

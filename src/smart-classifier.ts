@@ -6,12 +6,15 @@
  * under the smart approval mode:
  *
  *   1. Danger list — compiled deterministic regex; a hit hands off to human.
- *   2. Session memory — `sha256(toolName + rawArguments)` key, 30-min TTL,
+ *   2. Read-only git fast-path — a strictly-parsed single read-only git
+ *      invocation auto-approves here, without touching memory or the LLM
+ *      (see `read-only-git.ts`). Ordered after the danger list on purpose.
+ *   3. Session memory — `sha256(toolName + rawArguments)` key, 30-min TTL,
  *      per-session bounded cache; a hit auto-approves without LLM.
- *   3. LLM classifier — one-shot chat call against `ctx.llm` with the
+ *   4. LLM classifier — one-shot chat call against `ctx.llm` with the
  *      evidence JSON + classifier prompt; `approve` → allow + remember,
  *      anything else → ask.
- *   4. Fail-safe — every unexpected outcome (timeout, protocol error,
+ *   5. Fail-safe — every unexpected outcome (timeout, protocol error,
  *      missing seam, non-approve verdict, exception) routes to ask.
  *
  * The classifier intentionally does NOT keep an in-memory report row or
@@ -22,6 +25,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { DEFAULT_SMART_DANGER_PATTERNS } from './smart-danger-patterns.js'
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
+import { matchReadOnlyGitCommand } from './read-only-git.js'
 
 // ─── Public types ───────────────────────────────────────────────────────────
 
@@ -44,6 +48,10 @@ export interface SmartEvaluatorConfig {
   readonly smartClassifierPrompt: string
   readonly smartProvider: string | null
   readonly smartModel: string | null
+  /** Deployer kill switch for the read-only git fast-path. The fast-path is
+   *  checked after the danger list and before the LLM classifier, so a
+   *  configured danger pattern always wins (see `read-only-git.ts`). */
+  readonly readOnlyGitCommands: boolean
 }
 
 /** The minimum surface we read off `ctx.llm.stream(options)`. Marked
@@ -77,10 +85,11 @@ export interface SmartModelSelection {
 /** Verdict for one shell call. `allow` means the plugin should return
  *  `{ kind: 'allow' }`; `ask` means it should fall through to the existing
  *  approval chain via `{ kind: 'ask' }`. `selection` is set only on the
- *  LLM-classifier paths; short-circuit outcomes (danger hit, session
- *  memory, no-default-model, …) leave it undefined. */
+ *  LLM-classifier paths; short-circuit outcomes (danger hit, read-only git
+ *  fast-path, session memory, no-default-model, …) leave it undefined. */
 export type SmartShellDecision =
   | { readonly kind: 'allow'; readonly source: 'remembered' | 'classifier'; readonly selection?: SmartModelSelection }
+  | { readonly kind: 'allow'; readonly source: 'read-only-git'; readonly subcommand: string }
   | { readonly kind: 'ask'; readonly detail: string; readonly selection?: SmartModelSelection }
 
 /** Factory return type. */
@@ -581,6 +590,17 @@ export function createSmartShellEvaluator(options: {
     const danger = findSmartDangerMatch(matchText, patterns)
     if (danger !== undefined) {
       return { kind: 'ask', detail: `pattern=${danger.source}` }
+    }
+
+    // Read-only git fast-path. Positioned AFTER the danger list so no
+    // deployer-configured pattern can be bypassed by it, and BEFORE the
+    // lifetime check / session memory / LLM call because a pure text match
+    // needs none of those resources and is cheaper than all of them.
+    // Deliberately not written to session memory: the match is O(1) and a
+    // remembered entry would only evict something useful from the cache.
+    if (config.readOnlyGitCommands && command !== undefined) {
+      const subcommand = matchReadOnlyGitCommand(command)
+      if (subcommand !== undefined) return { kind: 'allow', source: 'read-only-git', subcommand }
     }
 
     if (lifetimeSignal.aborted) return { kind: 'ask', detail: 'unloaded' }

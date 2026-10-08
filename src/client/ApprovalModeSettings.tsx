@@ -1,5 +1,5 @@
 /**
- * ApprovalModeSettings: the settings.section page for editing the eight
+ * ApprovalModeSettings: the settings.section page for editing the nine
  * user-facing Config fields. Bound to the plugin entry's volatile Config via
  * the injected configuration form; reads via `form.getSnapshot()`, writes via
  * `form.set()` (merge into the profile user layer) or `form.unset(field)`
@@ -16,7 +16,7 @@
  */
 import { useState, useEffect, useSyncExternalStore, useRef, type ReactElement } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import { Menu, Input, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, Input, Switch, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 // DSH 0.1.7: `SettingsScope` 已改名为 `ConfigForm`（dsh-client-ui-settings 的客户端子路径）。
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Config } from '../index'
@@ -49,6 +49,7 @@ const FALLBACK: Required<Config> = {
   readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal'],
   autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list'],
   unclassified: 'ask',
+  readOnlyGitCommands: true,
   sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
   askReason: 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',
   smartProvider: null,
@@ -71,6 +72,7 @@ function readValue(snapshotValue: Config | undefined): Required<Config> {
     readOnlyTools: c.readOnlyTools ?? FALLBACK.readOnlyTools,
     autoAllowTools: c.autoAllowTools ?? FALLBACK.autoAllowTools,
     unclassified: c.unclassified ?? FALLBACK.unclassified,
+    readOnlyGitCommands: c.readOnlyGitCommands ?? FALLBACK.readOnlyGitCommands,
     sandboxDefaults: c.sandboxDefaults ?? FALLBACK.sandboxDefaults,
     askReason: c.askReason ?? FALLBACK.askReason,
     smartProvider: c.smartProvider ?? FALLBACK.smartProvider,
@@ -347,6 +349,21 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
               disabled={busy.has('autoAllowTools')}
               onChange={(v) => { void commitField('autoAllowTools', v) }}
               placeholder={t('csv.placeholder')}
+            />
+          </FieldShell>
+
+          <FieldShell
+            label={t('field.readOnlyGitCommands')}
+            descKey="desc.readOnlyGitCommands"
+            t={t}
+            onReset={() => { reset('readOnlyGitCommands') }}
+            resetLabel={t('reset.label')}
+          >
+            <Switch
+              checked={value.readOnlyGitCommands}
+              disabled={busy.has('readOnlyGitCommands')}
+              label={t('field.readOnlyGitCommands')}
+              onChange={(next) => { void commitField('readOnlyGitCommands', next) }}
             />
           </FieldShell>
         </div>
