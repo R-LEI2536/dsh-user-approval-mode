@@ -1,5 +1,7 @@
-# Build outputs
-lib/
+# Build outputs — `lib/` is deliberately NOT ignored: it is committed so that a
+# GitHub install (`dsh plugin add github:R-LEI2536/dsh-user-approval-mode`) has
+# its bundle on disk already and needs no build step on the user's machine.
+# Rebuild it (`pnpm build`) and commit it in the same change as any src/ edit.
 *.tsbuildinfo
 
 # Environment / secrets — never commit
