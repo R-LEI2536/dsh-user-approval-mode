@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkout with `core.autocrlf=true` cannot rewrite the committed bundle into a
   "modified" state.
 
+- **The client bundle builds reproducibly.** The CSS-module class map was
+  emitted in lightningcss's own export order, which is a Rust `HashMap`'s
+  per-process iteration order: same keys, same values, different sequence on
+  every run, so two builds of the same source never produced the same bytes.
+  Committing `lib/` makes that fatal rather than cosmetic — every rebuild would
+  show a diff that mentions nothing real, and "rebuild and check `git diff
+  --exit-code lib/`" could never be a usable guard. The map's keys are now
+  sorted before serialization (the map is a lookup table, so order carries no
+  meaning); two consecutive `pnpm build` runs are now byte-identical.
+
 ## [0.8.0] - 2026-10-08
 
 ### Added
