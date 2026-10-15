@@ -1,0 +1,5 @@
+# `lib/` is committed on purpose (a GitHub install must ship a ready bundle),
+# so its bytes must not be rewritten by a checkout. Without `-text`, a Windows
+# clone with core.autocrlf=true rewrites every LF to CRLF and the committed
+# bundle shows up as modified — noise that invites committing a mangled file.
+lib/** -text

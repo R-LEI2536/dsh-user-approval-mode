@@ -60,8 +60,16 @@ export default defineConfig({
         })
         
         const classMap: Record<string, string> = {}
-        for (const [local, exp] of Object.entries(cssExports || {})) {
-          classMap[local] = exp.name
+        // lightningcss hands back its CSS-module exports in a per-process order
+        // (a Rust HashMap's iteration order), so the emitted map — and with it
+        // the bundle's bytes — differed on every build: same keys, same values,
+        // different sequence. `lib/` is committed (a GitHub install ships those
+        // bytes as-is), so the build has to be reproducible, or every rebuild
+        // shows a spurious diff and cannot be checked. Sort by local name; the
+        // map is a lookup table, so its order carries no meaning.
+        const locals = Object.keys(cssExports || {}).sort()
+        for (const local of locals) {
+          classMap[local] = cssExports![local].name
         }
         
         const css = code.toString()

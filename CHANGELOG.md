@@ -29,6 +29,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Single-command labels are unchanged (`detail=status`).
 - The `readOnlyGitCommands` settings-page description now describes chains
   instead of "a single command".
+- **The built `lib/` is committed, and `prepare` is removed.** A GitHub install
+  is a git checkout that pnpm fetches and packs, so the artifacts must be in the
+  repository rather than generated on the user's machine. This also retires the
+  fragile path the script implied: pnpm runs a git dependency's `prepare` inside
+  the fetched checkout, which needs the full devDependency tree (including the
+  native `lightningcss` binary), authorization for a dependency's build script,
+  and a lockfile the user's registry accepts — the corridor the market reports as
+  `git-prepare-not-allowed` / `git-prepare-failed`.
+
+  Consequence for this repository: `pnpm install` no longer builds. Run
+  `pnpm build` after cloning and after every `src/` change, and commit `lib/` in
+  the same change. `.gitattributes` pins `lib/**` to `-text` so a Windows
+  checkout with `core.autocrlf=true` cannot rewrite the committed bundle into a
+  "modified" state.
+
+- **The client bundle builds reproducibly.** The CSS-module class map was
+  emitted in lightningcss's own export order, which is a Rust `HashMap`'s
+  per-process iteration order: same keys, same values, different sequence on
+  every run, so two builds of the same source never produced the same bytes.
+  Committing `lib/` makes that fatal rather than cosmetic — every rebuild would
+  show a diff that mentions nothing real, and "rebuild and check `git diff
+  --exit-code lib/`" could never be a usable guard. The map's keys are now
+  sorted before serialization (the map is a lookup table, so order carries no
+  meaning); two consecutive `pnpm build` runs are now byte-identical.
+
+### Fixed
+
+- **A GitHub install mounted nothing, and it shipped no bundle to mount.** Two
+  independent defects on the install path — neither visible anywhere in `src/`:
+
+  - `files` listed only `lib/`, so npm/pnpm packing dropped `cordis.patch.yml`
+    from the package. DSH treats a bundle's patch file as required:
+    `loadOverlayPatches` throws when it cannot be read, `loadProfileDirectory`
+    catches that and records the bundle in `skippedBundles`, and the only trace
+    is a single `dsh: skipping profile bundle …` line on stderr. The bundle was
+    skipped whole, so the composer's approval-mode chip and the settings section
+    did not exist at all. `files` now lists `cordis.patch.yml` beside `lib/`.
+
+  - `lib/` was gitignored and produced by the `prepare` script, so a fresh
+    checkout held no bundle: `main` (`lib/index.js`) and `exports["./client"]`
+    (`lib/client.js`) both point into a directory that a `git clone` never
+    creates. DSH reads those files from disk and never builds them, so anyone
+    installing from GitHub got a plugin that could not load — on Windows or
+    anywhere else. The same was true of a `link:` development install, which
+    packs nothing at all.
 
 ## [0.8.0] - 2026-10-08
 

@@ -105,3 +105,11 @@ The DSH slot `settings.section` is occupied by this plugin. The page slot id is 
 ## DSH dependency line
 
 Peer and dev ranges target the DSH `0.2.0-rc.1+` line (`^0.2.0-rc.1`; 15 peers plus the same 15 as devDependencies). `cordis` and `schemastery` deliberately stay on `>=4.0.4` / `>=3.18.4`: the host's compatibility gate only judges names matching `@deepseek-ai/dsh*`, and both libraries are unchanged across the 0.1.7 → 0.2.0 corridor. This package is a **bundle** (`dsh.bundle.patch`), so a gate rejection skips the entire bundle rather than one row. `0.6.0` is the last release for the DSH `0.1.7` line; the range does not admit `0.1.7`, so plugin and host must move together.
+
+## Distribution
+
+Published on GitHub only (`dsh plugin --profile web add github:R-LEI2536/dsh-user-approval-mode`), never on a registry. Two consequences shape the repository.
+
+**The built `lib/` is committed.** A git-hosted dependency is fetched and packed: whatever the checkout holds is what the user runs, and nothing builds it afterwards. `prepare` is therefore deliberately absent from `package.json` — pnpm runs a git dependency's `prepare` inside the fetched checkout, which would pull the whole devDependency tree (native `lightningcss` binary included), need authorization for a dependency build script, and hinge on the user's registry accepting this repo's lockfile: the market's `git-prepare-not-allowed` / `git-prepare-failed` corridor. The bundle is built here (`pnpm build`), committed, and used as-is — so a `src/` edit, a rebuild and the `lib/` commit belong to the same change. `.gitattributes` pins `lib/**` to `-text`, because a Windows checkout with `core.autocrlf=true` would otherwise rewrite the committed bytes into a "modified" state.
+
+**`files` must list `cordis.patch.yml`.** DSH treats a bundle's patch file as required: `loadOverlayPatches` throws when it cannot be read, `loadProfileDirectory` catches that and records the bundle in `skippedBundles`, and the only trace is one `skipping profile bundle` line on stderr. A `files` whitelist holding just `lib/` drops the patch from the packed package, and the bundle then mounts nothing at all — no approval-mode chip, no settings section. Same symptom as a missing `lib/`, different cause; both are install-path defects that `src/` cannot show.

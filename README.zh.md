@@ -83,11 +83,16 @@
 dsh plugin --profile web add github:R-LEI2536/dsh-user-approval-mode
 ```
 
+构建产物 `lib/` 已随仓库提交，所以安装时**不需要在你的机器上执行任何构建**：DSH 直接从这个 checkout 读取 `lib/index.js` 和 `lib/client.js`。
+
 ### 从本地目录安装（开发模式）
 
 ```bash
+pnpm install && pnpm build
 dsh plugin --profile web add /path/to/dsh-user-approval
 ```
+
+本地安装会让 DSH 直接指向这个目录，没有任何环节会替你构建，所以 `lib/` 必须存在：克隆之后、以及每次改动 `src/` 之后都要跑一次 `pnpm build` —— 否则 Web UI 一直提供的是上一次的产物。
 
 ## 使用方法
 

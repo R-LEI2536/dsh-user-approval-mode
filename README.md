@@ -95,11 +95,20 @@ presets").
 dsh plugin --profile web add github:R-LEI2536/dsh-user-approval-mode
 ```
 
+The built bundle (`lib/`) is committed to this repository, so the install needs
+no build step on your machine: DSH reads `lib/index.js` and `lib/client.js`
+straight from the checkout.
+
 ### From Local Directory (Development)
 
 ```bash
+pnpm install && pnpm build
 dsh plugin --profile web add /path/to/dsh-user-approval
 ```
+
+A local install points DSH straight at this directory and nothing builds it for
+you, so `lib/` has to exist there: run `pnpm build` after cloning and after every
+change under `src/` — the Web UI keeps serving the previous bundle until you do.
 
 ## Known Limitations
 
