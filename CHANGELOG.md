@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The smart-classifier default prompt is simplified (13 lines → 12).** The
+  prompt ported verbatim from `dsh-auto-approve` carried that plugin's
+  framing: it classifies an approval request for a sandbox escalation the
+  agent already asked for. This gate instead consults the classifier for any
+  unscreened call, so the escalation premise, the danger-list narration
+  ("already blocked the catastrophic commands"), and the force-push narration
+  were describing other layers and are gone. The git-push branch rule folded
+  into the publishing concern. The safety contract is unchanged: the five ask
+  concerns, the trusted `latestUserMessage` override, and the JSON-only
+  verdict. Deployers who pin `smartClassifierPrompt` are unaffected. `lib/`
+  rebuilt.
 - Redirection stays refused wholesale, so `echo x > f`, `git status 2>&1` and
   `git log | head` keep asking. Quotes are now allowed in **echo** arguments
   (`echo "=== status ==="`) but stay banned in git arguments, where a quoted

@@ -2,6 +2,11 @@
 
 Status: accepted.
 
+Amended: the default classifier prompt is no longer a verbatim port — see
+`DEFAULT_SMART_CLASSIFIER_PROMPT` in `src/smart-prompt.ts` and the
+`[Unreleased]` CHANGELOG entry. The danger patterns, session-memory key,
+verdict parser, and streaming aggregator remain verbatim ports.
+
 Add a fifth approval mode **`smart`** to `dsh-user-approval-mode`. Smart mode
 is functionally "auto-edit with a shell upgrade": the only behavioral change
 vs `auto-edit` is that the shell family stops being a hard approval wall and
