@@ -31,7 +31,7 @@ _Avoid_: "tool group", "tool category"
 Tools that modify file or goal state (`write` / `edit` / `str_replace_editor` / `update_goal` by default).
 
 **Shell family**:
-Tools that execute commands (`bash` / `pwsh` by default).
+Tools that can execute arbitrary commands or code, so the gate cannot see through them statically (`bash` / `pwsh` by default). "Shell" is the historical name: the definition is *arbitrary execution*, of which shell command execution is one instance, not the boundary. The family's contract is its behavior, not its vocabulary — a member call is adjudicated individually (ask under request / auto-edit, five-step pipeline under smart).
 
 **Read-only family**:
 Tools that only read state — exempt from approval in every mode (`read` / `glob` / `grep` / `read_image` / `list_directory` / `todo_write` / `reme_search` / `list_agents` / `job_list` / `get_goal` by default). `autoAllowTools` is checked before the family check, so `readOnly` is a fall-through exemption while `autoAllow` is an explicit one.
