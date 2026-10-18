@@ -183,8 +183,9 @@ first:
   runtime-invariant mechanism was removed in this corridor. This plugin never
   used it; the only trace was a local tutorial chapter, now deleted.
 
-0.9.0 is verified statically (`pnpm typecheck`, 115 tests, `pnpm build`) and
-live against a real `0.2.1-rc.2` host. See
+0.9.0 is verified statically (`pnpm typecheck`, 115 tests, `pnpm build`) against
+the real `0.2.1-rc.2` types. Live verification (install gate, cold start, Web UI)
+is **deferred to the host-upgrade round** — the checklist is in
 [`docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md`](docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md).
 
 **v0.7.0+ requires DSH ≥ 0.2.0-rc.1**:

@@ -208,7 +208,7 @@ Web UI 状态独立管理，刷新时从服务器同步：
 - **必须与宿主同批次发布。** 低于 `0.2.1-rc.2` 的宿主会拒收本插件的 peer。本包是 bundle 形态（`dsh.bundle.patch`），拒收会跳过**整个 bundle**（`dsh: skipping profile bundle "dsh-user-approval-mode"`）—— 模式 chip 和"审批模式"设置页一起消失，而不是只禁用某一行。
 - **`@deepseek-ai/dsh-invariants` 与 `./invariant` 已被移除。** 官方的运行时不变量机制在本走廊整体删除。本插件从未使用；唯一痕迹是本地那份教程章节，现已删除。
 
-0.9.0 按静态验证（`pnpm typecheck`、115 个测试、`pnpm build`）加真实 `0.2.1-rc.2` 宿主实机验证交付。详见 [`docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md`](docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md)。
+0.9.0 按静态验证交付（`pnpm typecheck`、115 个测试、`pnpm build`，均面对真实的 `0.2.1-rc.2` 类型）；**实机验证（安装门、冷启动、Web UI）推迟到宿主升级那一轮**，清单见 [`docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md`](docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md)。
 
 **v0.7.0+ 要求 DSH ≥ 0.2.0-rc.1**：
 

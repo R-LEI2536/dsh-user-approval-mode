@@ -6,6 +6,7 @@
 **审计依据**: `deepseek-harness/DSH-0.2.1-rc.2-插件升级指南.md`；`.dsh-upgrade-notes/v021rc2/{surface,symbol,manifest,fleet}-diff.txt` + `cmp-*.py`（机器 diff）；本仓 `llm-workflows/2026-09-09-dsh-upgrade-audit-workflow.md`（10 条高风险 surface + cast 静默失败清单）
 **审计范围**: 仅本插件（单仓）；舰队其余 7 仓、宿主 checkout 的升级本身不在本次范围
 **审计结论**: ✅ **`src/**` / `test/**` / `cordis.patch.yml` / `lib/**` 零改动**；改动仅限依赖范围、`pnpm-workspace.yaml`、版本号与文档
+**本轮交付状态**: **L1（依赖解析）与静态验证（typecheck / test / build）已实测通过**；**L2 / L4 / L5 / L6 实机验证本轮未执行** —— 经用户决定留到宿主升级那一轮，可执行清单见 §7。凡本文档中未标注「已实测」的实机项，一律视为未验证。
 
 ---
 
