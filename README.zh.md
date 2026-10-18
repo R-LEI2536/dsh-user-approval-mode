@@ -200,6 +200,16 @@ Web UI 状态独立管理，刷新时从服务器同步：
 
 ### DSH 版本兼容性
 
+**v0.9.0+ 要求 DSH ≥ 0.2.1-rc.2**：
+
+所有 `@deepseek-ai/dsh-*` peer 范围升到 `^0.2.1-rc.2`（devDependencies 同步）；`@deepseek-ai/cordis` 升到 `>=4.0.5`，`@deepseek-ai/schemastery` 升到 `>=3.18.5`。**无需改源码**：DSH `0.2.0-rc.2` 到 `0.2.1-rc.2` 之间，本插件消费的每个包要么零改动，要么只是加法式变更。升级前有三点需要知道：
+
+- **下限是 `0.2.1-rc.2`，不是 `0.2.1-rc.1`。** `^0.2.1-rc.2` 不含 `0.2.1-rc.1`，也不含任何 `0.2.0-rc.*` 宿主。这是刻意的：把范围钉在插件实际验证过的那条线上，就不再依赖解析器的行为。（`^0.2.1-rc.1` 实测解成了 `0.2.1-rc.1` 而不是 rc.2 —— 因为 pnpm 11 会对一天内新发布的版本做隔离；`pnpm-workspace.yaml` 现已豁免整个 DSH scope 并把窗口显式写出。）
+- **必须与宿主同批次发布。** 低于 `0.2.1-rc.2` 的宿主会拒收本插件的 peer。本包是 bundle 形态（`dsh.bundle.patch`），拒收会跳过**整个 bundle**（`dsh: skipping profile bundle "dsh-user-approval-mode"`）—— 模式 chip 和"审批模式"设置页一起消失，而不是只禁用某一行。
+- **`@deepseek-ai/dsh-invariants` 与 `./invariant` 已被移除。** 官方的运行时不变量机制在本走廊整体删除。本插件从未使用；唯一痕迹是本地那份教程章节，现已删除。
+
+0.9.0 按静态验证（`pnpm typecheck`、115 个测试、`pnpm build`）加真实 `0.2.1-rc.2` 宿主实机验证交付。详见 [`docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md`](docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md)。
+
 **v0.7.0+ 要求 DSH ≥ 0.2.0-rc.1**：
 
 所有 `@deepseek-ai/dsh-*` peer 范围升到 `^0.2.0-rc.1`（devDependencies 同步）。无需改源码：DSH `0.1.7-rc.2` 到 `0.2.0-rc.2` 之间，本插件消费的每个包要么零改动，要么只是加法式变更。升级前有三点需要知道：

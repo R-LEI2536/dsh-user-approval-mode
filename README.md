@@ -159,6 +159,34 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 
 ### DSH Version Compatibility
 
+**v0.9.0+ requires DSH ≥ 0.2.1-rc.2**:
+
+Every `@deepseek-ai/dsh-*` peer range moves to `^0.2.1-rc.2` (and the
+devDependencies move with it); `@deepseek-ai/cordis` goes to `>=4.0.5` and
+`@deepseek-ai/schemastery` to `>=3.18.5`. No source change was needed:
+between DSH `0.2.0-rc.2` and `0.2.1-rc.2` every package this plugin consumes
+is either unchanged or changed additively. Three things are worth knowing
+first:
+
+- **The floor is `0.2.1-rc.2`, not `0.2.1-rc.1`.** `^0.2.1-rc.2` excludes
+  both `0.2.1-rc.1` and every `0.2.0-rc.*` host. Deliberate: pinning the line
+  this plugin is verified against removes any dependence on resolver
+  behaviour. (`^0.2.1-rc.1` resolved to `0.2.1-rc.1`, not rc.2, because
+  pnpm 11 quarantines versions published in the last day — `pnpm-workspace.yaml`
+  now exempts the DSH scope and states the window explicitly.)
+- **Ship it together with the host.** A host older than `0.2.1-rc.2` rejects
+  this plugin's peers. Because the package is a bundle (`dsh.bundle.patch`),
+  rejection skips the **whole bundle** (`dsh: skipping profile bundle
+  "dsh-user-approval-mode"`) — the mode chip and the Approval Modes settings
+  page disappear together, instead of a single row being disabled.
+- **`@deepseek-ai/dsh-invariants` and `./invariant` are gone.** The official
+  runtime-invariant mechanism was removed in this corridor. This plugin never
+  used it; the only trace was a local tutorial chapter, now deleted.
+
+0.9.0 is verified statically (`pnpm typecheck`, 115 tests, `pnpm build`) and
+live against a real `0.2.1-rc.2` host. See
+[`docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md`](docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md).
+
 **v0.7.0+ requires DSH ≥ 0.2.0-rc.1**:
 
 Every `@deepseek-ai/dsh-*` peer range moves to `^0.2.0-rc.1` (and the
