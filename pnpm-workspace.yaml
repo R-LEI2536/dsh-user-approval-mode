@@ -3,7 +3,21 @@ allowBuilds:
   # this opt-in pnpm 11 refuses to run the script and the deps status check
   # fails downstream (`pnpm install` exits non-zero).
   esbuild: true
+# pnpm 11 quarantines freshly published versions for 1440 minutes (1 day) by
+# default. The DSH release-candidate lines this repo tracks are consumed within
+# days of publication, so without an exemption the window silently resolves them
+# back to the PREVIOUS rc — `^0.2.1-rc.2` fell back to `0.2.1-rc.1`, which left
+# `pnpm typecheck` compiling against the wrong line.
+#
+# Note the matching rule: `minimumReleaseAgeExclude` accepts package NAMES and
+# globs, not `name@version` specifiers. The per-version entries kept below are
+# therefore inert, and the whole DSH scope is exempted by name instead. The
+# window is stated explicitly rather than relying on pnpm's default.
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
+  - '@deepseek-ai/dsh-*'
+  # Historical per-version entries from the 0.1.2 / 0.1.5 corridors. Inert (see
+  # above); retained only so the file's history stays legible. Do not add more.
   - '@deepseek-ai/dsh-agent@0.1.2-rc.1'
   - '@deepseek-ai/dsh-api-remotes@0.1.2-rc.1'
   - '@deepseek-ai/dsh-attachment@0.1.2-rc.1'
@@ -18,7 +32,6 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-code-runtime@0.1.2-rc.1'
   - '@deepseek-ai/dsh-commands@0.1.2-rc.1'
   - '@deepseek-ai/dsh-deque@0.1.2-rc.1'
-  - '@deepseek-ai/dsh-invariants@0.1.2-rc.1'
   - '@deepseek-ai/dsh-llm@0.1.2-rc.1'
   - '@deepseek-ai/dsh-sandbox-policy@0.1.2-rc.1'
   - '@deepseek-ai/dsh-sandbox@0.1.2-rc.1'

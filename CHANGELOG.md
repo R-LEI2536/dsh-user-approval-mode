@@ -5,7 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2026-10-18
+
+### Changed
+
+- **The DSH dependency line moves to `0.2.1-rc.2`.** All fifteen
+  `@deepseek-ai/dsh-*` peer ranges and their devDependency twins go from
+  `^0.2.0-rc.1` to `^0.2.1-rc.2`; `@deepseek-ai/cordis` goes to `>=4.0.5` and
+  `@deepseek-ai/schemastery` to `>=3.18.5`. **No source change was needed**:
+  across the 0.2.0 → 0.2.1 corridor every package this plugin consumes is
+  either unchanged or changed additively, and the fifteen DSH packages are the
+  only dependency movement that reaches the published artifact.
+
+  Two consequences are worth knowing before upgrading a harness:
+
+  - `^0.2.1-rc.2` excludes `0.2.1-rc.1` and every `0.2.0-rc.*` host, so the
+    host must move to `0.2.1-rc.2` in the same batch. That is stricter than
+    the corridor guide's suggested `^0.2.1-rc.1`, and deliberate: pinning the
+    exact line the plugin is verified against removes any dependence on
+    resolver behaviour. (While doing the work, `^0.2.1-rc.1` resolved to
+    `0.2.1-rc.1` rather than rc.2 — see the `pnpm-workspace.yaml` change
+    below, which explains why and fixes the cause.)
+  - `@deepseek-ai/dsh-invariants` and the whole-repo `./invariant` subpath
+    export were removed upstream. This plugin never imported either; the
+    only trace was the local (gitignored) tutorial chapter that taught them,
+    which is now deleted.
+
+- **`pnpm-workspace.yaml` exempts the DSH scope from pnpm's release
+  quarantine.** pnpm 11 withholds any version published within
+  `minimumReleaseAge` (1440 minutes = 1 day by default). `0.2.1-rc.2` was
+  published hours before this change, so a fresh resolution silently fell back
+  to `0.2.1-rc.1` — which would have left `pnpm typecheck` compiling against
+  the wrong line. The window is now stated explicitly, `@deepseek-ai/dsh-*` is
+  exempted by name, and the stale `dsh-invariants@0.1.2-rc.1` entry was
+  dropped. That entry, and the rest of the per-version entries from the
+  0.1.2/0.1.5 corridors, never did anything: the exclude list matches package
+  **names**, not `name@version` specifiers.
+
+  The committed `lib/` is untouched: a rebuild under this worktree changes
+  only the CSS-module class-name hash (`lightningcss` derives it from the
+  absolute file path), which is build-directory noise rather than a semantic
+  change — see `docs/2026-10-18-dsh-v0-2-1-rc-2-compatibility-audit.md`.
 
 ### Added
 
