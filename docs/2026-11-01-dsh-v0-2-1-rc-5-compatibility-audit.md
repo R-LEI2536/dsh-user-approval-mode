@@ -170,6 +170,16 @@ Client（`src/client/index.ts` 及组件）：
 
 **抬线后果**：devDeps 抬到 rc.5 只影响本仓开发/类型检查；peer 未动 ⇒ **运行中的 rc.2 宿主继续接受 v0.10.0**（与 v0.9.0 的「必须同批次」不同）。rc.1 与 0.2.0-rc.* 仍被拒收。
 
+**真实门禁函数实算（不是按范围查表推断）**：从全局 `dsh`（rc.2 宿主，`.../@deepseek-ai/dsh/lib/bin.js`）借出同版本 `@deepseek-ai/dsh-app-boot`，直接调用 `evaluatePluginCompatibility(manifest, exemptions, runtimeVersion)`，返回 `undefined` 即通过：
+
+| 用例 | 调用 | 结果 |
+| --- | --- | --- |
+| A 本插件（`^0.2.1-rc.2` peer）@ rc.5 | `evaluatePluginCompatibility(pkg, {}, '0.2.1-rc.5')` | **`undefined`** ⇒ 兼容，无 unmet |
+| B 对照：一条 peer 精确钉 `0.2.1-rc.2` @ rc.5 | 同上（只改 `dsh-tools`） | `requirements: {"@deepseek-ai/dsh-tools":"0.2.1-rc.2"}`，`exempted:false` ⇒ 证明门不是恒真 |
+| C 对照：本插件 @ `0.2.1-rc.1` | 同上 | 15 条 dsh peer 全部进 `requirements` ⇒ rc.1 宿主仍被拒 |
+
+门实现（`plugin-compatibility.ts`）在 rc.2↔rc.5 逐字节相同，因此借用 rc.2 宿主的函数对 rc.5 运行时语义等价；其结果与 `semver.satisfies(..., {includePrerelease:true})` 的逐条计算一致。
+
 ---
 
 ## 五、L1 静态验证记录
@@ -183,7 +193,7 @@ Client（`src/client/index.ts` 及组件）：
 | `pnpm typecheck`（`tsc -p tsconfig.test.json`） | **exit 0，零错误** ⇒ 印证「src 零改动」 |
 | `pnpm test` | **exit 0，115 passed / 0 failed** |
 | `pnpm build`（`tsc && tsdown`） | exit 0，`lib/client.js` 42.76 kB（与已提交产物同尺寸） |
-| 门谓词 | rc.2–rc.5 / 0.2.1 / 0.2.2 全通过（§4）；devDeps@rc.5 同样通过 |
+| 门禁 | **真实函数** `evaluatePluginCompatibility` @ rc.5 = `undefined`；对照组（peer 精确钉 rc.2）被拒；本插件 @ rc.1 被拒（§4）；devDeps@rc.5 同样通过 |
 | §6.1 grep | `assertNever` 0；`send_button_click` 0；`settingsScope` / `settings.plugin.item` 0；`dsh-invariants` 仅出现在 `pnpm-lock.yaml` 传递依赖（`src/`、manifest 0 处） |
 | `git diff --exit-code lib/` | 非空 → **已归因并回滚**（§2.2 / §5.1） |
 
