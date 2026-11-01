@@ -159,6 +159,30 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 
 ### DSH Version Compatibility
 
+**v0.10.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.1-rc.5)**:
+
+The fifteen `@deepseek-ai/dsh-*` devDependencies move to `^0.2.1-rc.5`; the
+fifteen **peer ranges stay `^0.2.1-rc.2`**, which already admits `0.2.1-rc.3`,
+`0.2.1-rc.4` and `0.2.1-rc.5` (same `0.2.1` prerelease tuple) while keeping the
+artifact installable on every `0.2.1-rc.2`+ host. No source change was needed:
+in the rc.2 → rc.5 corridor every host package this plugin consumes changed
+only its version, and the client-side changes (`ui-conversation`,
+`ui-primitives`) do not touch the two slots this plugin occupies. Two things
+are worth knowing:
+
+- **The install floor did not move; the verified line did.** Hosts on
+  `0.2.1-rc.2` through `0.2.1-rc.5` all accept this release, while
+  `0.2.1-rc.1` and every `0.2.0-rc.*` host remain rejected.
+- **`lib/` is not rebuilt.** No `src/` change, so the committed bundle stays.
+  A rebuild under rc.5 differs only in the path-derived CSS class hash and
+  `//#region` comments; the CSS text and JS are byte-identical.
+
+0.10.0 is verified statically (`pnpm typecheck`, 115 tests, `pnpm build`)
+against the real `0.2.1-rc.5` types, and the install gate is computed to pass
+on `0.2.1-rc.2` … `0.2.1-rc.5`. Live verification (install gate, cold start,
+Web UI) is **deferred to the host-upgrade round** — the checklist is in
+[`docs/2026-11-01-dsh-v0-2-1-rc-5-compatibility-audit.md`](docs/2026-11-01-dsh-v0-2-1-rc-5-compatibility-audit.md).
+
 **v0.9.0+ requires DSH ≥ 0.2.1-rc.2**:
 
 Every `@deepseek-ai/dsh-*` peer range moves to `^0.2.1-rc.2` (and the

@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-11-01
+
+### Changed
+
+- **The DSH dependency line is verified against `0.2.1-rc.5`.** The fifteen
+  `@deepseek-ai/dsh-*` **devDependencies** move from `^0.2.1-rc.2` to
+  `^0.2.1-rc.5`; the fifteen **peer ranges stay `^0.2.1-rc.2`**, because that
+  range already admits every `0.2.1-rc.*` host up to and including rc.5, and a
+  narrower peer floor would reject the `0.2.1-rc.2` hosts this plugin still
+  supports. **No source change was needed**: across the rc.2 → rc.5 corridor
+  every package this plugin consumes is either unchanged or changed
+  additively — the host-side packages (`dsh-session`, `dsh-sandbox`,
+  `dsh-sandbox-policy`, `dsh-permission-presets`, `dsh-commands`,
+  `dsh-settings`, `dsh-tools`, `dsh-api-remotes`, `shell`, `llm`,
+  `agent-default-model`) changed only their `package.json` version, and the
+  client-side changes (`ui-conversation` 12 files, `ui-primitives` 4 files) sit
+  in surfaces this plugin does not use. The two slots it does occupy —
+  `conversation.input.left` and `settings.section` — are byte-identical
+  between rc.2 and rc.5.
+
+  Consequences worth knowing before upgrading a harness:
+
+  - **The install floor did not move.** `^0.2.1-rc.2` still excludes
+    `0.2.1-rc.1` and every `0.2.0-rc.*` host, and the artifact published here
+    installs on any `0.2.1-rc.2`+ host without re-shipping. Only the local
+    typecheck surface moved, so `pnpm typecheck` now compiles against the rc.5
+    types the plugin is declared to support. (The corridor guide's optional
+    `^0.2.1-rc.1` widening was considered and rejected: it would admit a host
+    line this plugin has never been verified against, and `CONTEXT.md` pins the
+    verified floor.)
+  - **The committed `lib/` is untouched.** A rebuild under rc.5 reproduces the
+    committed bundle except for the CSS-module class-name hash and the
+    `//#region` path comments, both derived from the build directory's
+    absolute path; the CSS text and the JS are byte-identical. `src/` did not
+    change, so by this repo's rule (`CONTEXT.md` §Distribution) `lib/` is not
+    rebuilt. Per-hunk attribution is in the audit doc.
+  - **One stale cohort stays in the lockfile, by design.**
+    `@rh854lkjd/dsh-tool-list-dir@0.3.3` (declared `>=0.2.7`, unused by
+    `src/`) still drags `dsh-fs@0.2.0-rc.2` and `dsh-invariants@0.2.0-rc.2`
+    into the dev tree; that is a dev-only artifact of an unused dependency and
+    plays no part in what the host loads. Accepted, not fixed, in this round.
+
 ## [0.9.0] - 2026-10-18
 
 ### Changed
