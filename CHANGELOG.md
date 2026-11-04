@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   joins the `files` whitelist; without it the plugin still loads but logs a
   warning and contributes no skill.
 
+### Changed
+
+- **The bundled skill's catalog description now leads with its trigger.** The
+  session catalog renders only `name: description` — whitespace collapsed, and
+  truncated with `...` past 500 characters — while `whenToUse` is stored and
+  shown in the UI but never reaches the model's decision. The description opens
+  with the situations that should load the skill (before git inspection or
+  commit-review commands under this plugin, an approval prompt, or a rejected
+  command) instead of describing the skill first, and the skill's maintenance
+  section records this trigger surface so later edits keep their cues in the
+  field that actually fires.
+
 ## [0.10.0] - 2026-11-01
 
 ### Changed

@@ -1,7 +1,7 @@
 ---
 name: dsh-approval-shell-style
-description: Write shell commands that work well with the dsh-user-approval gate: prefer the always-allowed read-only tools, and phrase read-only git inspection as a chain of git-subcommand and echo segments that the approval fast path can parse. Use when approval prompts interrupt shell work, a command was rejected, or you need git status/log/diff/review commands under this plugin.
-whenToUse: Before writing git inspection or review commands in a session that runs dsh-user-approval, after repeated approval prompts or a rejected command, or when another skill needs an approval-friendly command style. Not for the plugin's implementation details.
+description: Load before writing git inspection or commit-review commands in a session with dsh-user-approval, and whenever an approval prompt blocks shell work or a command was rejected. It gives the command shapes the read-only git fast path accepts (git and echo segments only, no quotes, redirects, non-git pipes, or cd) and the inspection that always-allowed read-only tools cover instead. Not for changing the plugin's code.
+whenToUse: Before writing git status/log/diff/show or review commands under dsh-user-approval, after an approval prompt or a rejected command, or when another skill needs an approval-friendly command style.
 ---
 
 # Approval-friendly shell style
@@ -78,3 +78,5 @@ git -C /path/to/repo status --short
 ## Maintenance
 
 The behaviour source is this plugin's `src/read-only-git.ts`; its rationale and accepted boundaries are in `docs/adr/0003-read-only-command-fast-path.md`. Keep this skill in sync when the parser changes. An approved chain is logged as `[dsh-user-approval[read-only-git]] decision=allow detail=<label>`.
+
+`description` is the only trigger surface. The session catalog renders `- \`name\`: description` and nothing else: whitespace is collapsed, and the text is truncated with `...` past `catalogDescriptionMaxLength` (500 characters by default in `tool-skill`). `whenToUse` is stored and shown in the UI, but it never reaches the model's decision, so a cue that lives only there is a cue that never fires. Keep the situation that should make an agent load this skill in the first clause of `description`, and keep the whole line under 500 characters.
