@@ -25,6 +25,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 - **LLM Provider Reuse**: The Smart classifier reuses DSH's configured LLM provider and model; this plugin does not configure an endpoint, API key, or OpenAI-compatible protocol separately.
 - **Smart-mode shell classifier**: A five-step pipeline (danger list → read-only git fast-path → session memory → LLM classifier → fail-safe) auto-approves routine shell commands while keeping dangerous or unclear ones in front of the user.
 - **Read-only git fast-path**: A chain of strictly-parsed read-only links (`git status`, `git log`, `git diff`, …) joined with `&&` `;` `|` or a newline, plus `echo "…"` decoration lines, is exempt from approval in request, auto-edit, and smart, so the agent's highest-frequency shell calls stop prompting. Switch it on the settings page (`readOnlyGitCommands`), or pin it in `cordis.yml`.
+- **Bundled shell-style skill**: The package ships `dsh-approval-shell-style`, a skill the agent can load to write approval-friendly commands (fast-path grammar, expected prompts, post-rejection posture). It appears in the skill catalog of every session while the plugin is mounted and disappears with the plugin.
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
@@ -645,6 +646,28 @@ Everything else keeps asking:
   `--ext-diff` / `--textconv` opt-ins are rejected. Rationale and the rejected
   alternatives are in
   [ADR 0003](docs/adr/0003-read-only-command-fast-path.md).
+
+## Bundled Skill
+
+The package ships one agent skill, `dsh-approval-shell-style`. It documents the
+gate from the agent's side: which tools are always allowed, how to phrase a
+read-only git chain so the fast path parses it, which calls still prompt, and
+what to do after a rejection.
+
+- **Where it appears** — the skill catalog (`<available_skills>`) of every
+  session in the profile that mounts the plugin, plus the Web skill list;
+  `skill({ name: "dsh-approval-shell-style" })` loads it on demand. It is not
+  copied into `~/.dsh/skills` or the workspace.
+- **Lifecycle** — the plugin registers the skill through the optional `skills`
+  service while it is mounted and unregisters it on unload, so disabling or
+  uninstalling the plugin removes the skill with no leftover files. Existing
+  sessions keep only their historical catalog messages.
+- **Override** — project (`.dsh/skills`, `.agents/skills`) and user
+  (`~/.dsh/skills`, `~/.agents/skills`) skills rank above a packaged one
+  (rank 600), so a same-named local skill deliberately replaces it.
+- **Packaging** — `skills/` is part of the `files` whitelist. Dropping it ships
+  a plugin that still loads but logs a warning and contributes no skill: the
+  same class of install-path defect as a missing `cordis.patch.yml`.
 
 ## How It Works
 

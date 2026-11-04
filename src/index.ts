@@ -14,7 +14,9 @@
  * 只读 git 命令快路径（`readOnlyGitCommands`，默认开）：在 request /
  * auto-edit / smart 下，严格解析后的单条只读 git 调用免审。解析规则与
  * 已知天花板见 src/read-only-git.ts 与
- * docs/adr/0003-read-only-command-fast-path.md。
+ * docs/adr/0003-read-only-command-fast-path.md。该规则同时以打包 skill
+ * `skills/dsh-approval-shell-style/SKILL.md` 的形式提供给会话（见
+ * src/approval-skill.ts）。
  *
  * 切换模式（`/approval-mode <mode>`）时联动写入 `sandbox/mode`：
  * request/auto-edit/yolo → 配置默认（默认 workspace-write）；off → 组合默认。
@@ -53,6 +55,7 @@ import {
   type SmartSessionMemory,
 } from './smart-classifier.js'
 import { matchReadOnlyGitCommand } from './read-only-git.js'
+import { registerApprovalShellSkill } from './approval-skill.js'
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
 import {
   findAskPresetForSandbox,
@@ -234,6 +237,10 @@ export function setApprovalMode(session: Session, mode: ApprovalMode): void {
 }
 
 export function apply(ctx: Context, config: VolatileConfig): void {
+  // 打包的 shell 写法 skill：注册进会话 skill 目录，随插件卸载/停用反注册。
+  // 内容与注册逻辑见 src/approval-skill.ts；注册失败只跳过，不影响插件启动。
+  registerApprovalShellSkill(ctx)
+
   // 本插件自带 settings.section 页面（见 src/client），`auto: false` 抑制 settings
   // 服务为 volatile Config 自动生成页面（rc.2 官方范式，ui-chat/ui-theme 同款）。
   ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })

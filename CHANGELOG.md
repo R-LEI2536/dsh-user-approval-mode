@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The package ships the `dsh-approval-shell-style` agent skill.** It states
+  the gate's command contract from the agent's side — always-allowed tools, the
+  read-only git fast-path grammar, the calls that still prompt, and the
+  post-rejection posture. `src/approval-skill.ts` registers it through the
+  optional `skills` service while the plugin is mounted, so it appears in every
+  session of the profile that installs the plugin, and unloading or disabling
+  the plugin unregisters it with no leftover files. Project and user skills
+  with the same name override it (the packaged provider ranks 600). `skills/`
+  joins the `files` whitelist; without it the plugin still loads but logs a
+  warning and contributes no skill.
+
 ## [0.10.0] - 2026-11-01
 
 ### Changed

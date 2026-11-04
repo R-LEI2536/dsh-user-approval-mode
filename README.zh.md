@@ -23,6 +23,7 @@
 - **设置页面**：在 `设置 → 审批模式` 里配置审批选项（工具族名单、各模式 sandbox 策略、审批弹窗文案模板，以及 smart 分类器的 provider/model）。默认模式、未分类策略与 smart 内部细节仅由部署方配置（在 `cordis.yml` 中设置）。
 - **Smart 模式 shell 分类器**：五步流水线（危险清单 → 只读 git 快路径 → 会话记忆 → LLM 分类器 → fail-safe），自动放行例行 shell 命令，危险或不确定仍转人工。
 - **只读 git 快路径**：严格解析后的只读命令链（`git status`、`git log`、`git diff` 等，用 `&&` `;` `|` 或换行串起来）外加 `echo "…"` 装饰行，在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。设置页有开关（`readOnlyGitCommands`），也可在 `cordis.yml` 里钉 base。
+- **自带 skill**：包内随附 `dsh-approval-shell-style`，代理可以加载它来写「审批友好」的命令（快路径语法、预期的弹窗、被拒后的处理）。插件装着的会话都能在技能目录里看到，卸载插件即消失。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
@@ -498,6 +499,24 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
   命令文本判不出来。只有显式的 `--ext-diff` / `--textconv` 会被拒。理由与
   被否决的替代方案见
   [ADR 0003](docs/adr/0003-read-only-command-fast-path.md)。
+
+## 自带 skill
+
+包内随附一个代理 skill：`dsh-approval-shell-style`。它从代理视角描述本插件
+的闸：哪些工具永远免审、只读 git 链怎么写成快路径能解析的形式、哪些调用仍会
+弹窗、被拒之后怎么处理。
+
+- **出现在哪里** —— 挂载了本插件的 profile 里，每个会话的技能目录
+  （`<available_skills>`）与 Web 技能列表；
+  `skill({ name: "dsh-approval-shell-style" })` 按需加载。不会写入
+  `~/.dsh/skills` 或工作区。
+- **生命周期** —— 插件挂载期间通过可选的 `skills` 服务注册，卸载/停用时反
+  注册，不残留文件；历史会话只保留当时的目录消息。
+- **覆盖** —— 项目级（`.dsh/skills`、`.agents/skills`）与用户级
+  （`~/.dsh/skills`、`~/.agents/skills`）skill 的 rank 更高，同名本地 skill
+  会覆盖插件版（插件版 rank 600）。
+- **打包** —— `skills/` 必须在 `files` 白名单里；漏掉时插件照常加载但只打一
+  条警告、不贡献 skill（与漏掉 `cordis.patch.yml` 同类的安装路径缺陷）。
 
 ## 工作原理
 

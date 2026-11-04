@@ -14,7 +14,9 @@
  * 只读 git 命令快路径（`readOnlyGitCommands`，默认开）：在 request /
  * auto-edit / smart 下，严格解析后的单条只读 git 调用免审。解析规则与
  * 已知天花板见 src/read-only-git.ts 与
- * docs/adr/0003-read-only-command-fast-path.md。
+ * docs/adr/0003-read-only-command-fast-path.md。该规则同时以打包 skill
+ * `skills/dsh-approval-shell-style/SKILL.md` 的形式提供给会话（见
+ * src/approval-skill.ts）。
  *
  * 切换模式（`/approval-mode <mode>`）时联动写入 `sandbox/mode`：
  * request/auto-edit/yolo → 配置默认（默认 workspace-write）；off → 组合默认。
