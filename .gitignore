@@ -21,6 +21,9 @@ tutorial/
 local-docs/
 ref_codes/
 
+# Local DSH dev artifacts (project-local skills, scratch); never published
+.dsh/
+
 # IDE
 .vscode/
 .idea/
