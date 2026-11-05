@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-11-05
+
+### Added
+
+- **PTC preset compatibility: the gate now treats `run_code` as a transport.**
+  The `ptc` agent preset exposes only `run_code`, so the plugin used to classify
+  one opaque tool while the actions happened inside the program's `tools.*`
+  bindings. `run_code` now ships in `autoAllowTools`, so all five modes allow
+  the transport without a prompt and its program source is never sent to the
+  smart classifier; each sub-call re-enters `tools/pre-execute` under its real
+  tool name and keeps the existing family verdict (`write` asks under request,
+  `bash` runs the smart five-step pipeline, `read` is exempt). The transport is
+  a config default, not a hardcoded exception, so removing it from
+  `autoAllowTools` restores one prompt per program.
+
+- **PTC sub-call approval prompts carry an argument summary.** The host approval
+  panel resolves only a top-level tool node's `command`, so a nested PTC
+  sub-call would prompt with no visible command. The gate appends `[args: …]`
+  to the ask reason of a sub-call only (`exec.parent !== undefined`): the shell
+  command, the write path, or another argument as JSON, collapsed to one line
+  and capped at 200 characters. Native dialogs are unchanged. `test/gate-ptc.test.ts`
+  covers the transport allow in every mode, per-family sub-call verdicts, the
+  read-only git fast path, smart-mode danger-list and `llm-unavailable`
+  fallback, the escape hatch, and the truncation.
+
+### Changed
+
+- `autoAllowTools` gains `run_code` in the schema defaults, the shipped
+  `cordis.patch.yml`, and the client `FALLBACK`, so bundle installs, manual
+  inserts and the settings page agree; a deployer who pins the list explicitly
+  still gets the old behaviour deliberately. The default is pinned by
+  `test/tool-family-defaults.test.ts` and documented as a tool-family
+  exception in both READMEs and CONTEXT.md.
+
+- Both READMEs gain a PTC section under Known Limitations: the transport never
+  prompts, approval lands on sub-calls, direct `import('node:fs')` /
+  `node:child_process` effects bypass the gate (sandbox is the only write
+  boundary, so request mode under PTC is not per-write approval), a denied
+  sub-call is a catchable `ToolCallError` and every retry re-prompts, approval
+  waits count against the `run_code` budget, and the settings escape hatch.
+  The bundled `dsh-approval-shell-style` skill gains the agent-side PTC
+  contract (same gated sub-calls, read the `[args: …]` summary, do not route
+  around a rejection with direct Node imports).
+
+### Documentation
+
+- **ADR 0004 — "`run_code` is the PTC transport: allow the program, gate every
+  sub-call".** Records why the transport must be allowed rather than gated (the
+  host rejects collapsed model-direct calls before the policy pipeline), why the
+  five rejected alternatives lost (blind per-program prompt, `run_code` in
+  `shellTools` sending the program to the classifier, a new single-member family,
+  a hardcoded gate exception, duplicate classification), and the accepted
+  boundaries: direct Node effects, catchable sub-call denials, the run-budget
+  interaction, and the host-side dialog gap the summary compensates for.
+
 ## [0.11.0] - 2026-11-05
 
 ### Added
