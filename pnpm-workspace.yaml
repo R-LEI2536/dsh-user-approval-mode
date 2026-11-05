@@ -16,6 +16,15 @@ allowBuilds:
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-*'
+  # DSH 0.2.2-rc.1 ships cordis 4.1.0 / schemastery 3.19.0 and their
+  # sub-packages (cordis-plugin-group/-include/-loader, cosmokit), all
+  # published in the same release window. The install of that line has to
+  # resolve them, so the same quarantine that would reject the corridor's own
+  # packages is lifted by name here. Keep this list to the names the corridor
+  # actually publishes; do not widen it to the whole scope.
+  - '@deepseek-ai/cordis*'
+  - '@deepseek-ai/cosmokit'
+  - '@deepseek-ai/schemastery'
   # Historical per-version entries from the 0.1.2 / 0.1.5 corridors. Inert (see
   # above); retained only so the file's history stays legible. Do not add more.
   - '@deepseek-ai/dsh-agent@0.1.2-rc.1'

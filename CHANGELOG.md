@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-11-05
 
 ### Added
 
@@ -31,6 +31,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command) instead of describing the skill first, and the skill's maintenance
   section records this trigger surface so later edits keep their cues in the
   field that actually fires.
+
+- **The DSH dependency line is verified against `0.2.2-rc.1`.** The fifteen
+  `@deepseek-ai/dsh-*` **devDependencies** are pinned exactly to `0.2.2-rc.1`
+  (no `^`/`~`), the same discipline the previous corridor used for rc.5. A
+  caret cannot reach a new rc at all: measured with the host's semver,
+  `^0.2.1-rc.5` resolves to `0.2.1-rc.5` even when `0.2.2-rc.1` is published,
+  because a prerelease outside the range's tuple never matches; the previous
+  corridor also saw pnpm 11's release-age quarantine fall back to the previous
+  rc. The exact pin is what makes the dev tree compile against the target
+  runtime — devDependencies do not enter the compatibility gate. The fifteen
+  **peer ranges stay `^0.2.1-rc.2`**, so one published artifact keeps installing
+  on every `0.2.x` host from `0.2.1-rc.2` onward (verified at `0.2.1-rc.5` and
+  `0.2.2-rc.1`; the same range also admits later `0.2.2`/`0.2.x` prereleases).
+  The install floor did not move: `0.2.1-rc.1` and every `0.2.0-rc.*` host stay
+  rejected.
+
+  npm and pnpm apply the default prerelease rules, which do not admit a `0.2.2`
+  prerelease from a `^0.2.1-rc.2` range, so installing on a `0.2.2-rc.1` host
+  can print unmet-peer warnings for the fifteen peers. The judge is the host's
+  compatibility gate, which evaluates with `includePrerelease: true` and passes;
+  those warnings are expected, not a rejection.
+
+  The compatibility gate was computed with the host's own
+  `evaluatePluginCompatibility` rather than inferred: with the shipped peer set
+  it passes at runtime `0.2.2-rc.1` **and** at `0.2.1-rc.5`, while a control
+  manifest that pins only `@deepseek-ai/dsh-tools` (one peer, no others) to the
+  old `0.2.1-rc.5` is **rejected** at `0.2.2-rc.1` — the gate is not vacuous.
+  One measured result contradicts the corridor guide's derived table: at runtime
+  `0.2.2-rc.1`, a `^0.2.1` peer (no prerelease) **passes**, because the host
+  evaluates ranges with `includePrerelease: true` and `0.2.2-rc.1 > 0.2.1`. Do
+  not repeat the guide's "`^0.2.1` is rejected" row without measuring; the audit
+  doc records the inputs and outputs.
+
+- **`@deepseek-ai/cordis` and `@deepseek-ai/schemastery` devDependencies match
+  the rc.1 host (4.1.0 / 3.19.0).** Across the fifteen `0.2.2-rc.1` packages this
+  plugin consumes, every one declares `@deepseek-ai/cordis: ~4.1.0`, and
+  `@deepseek-ai/schemastery: ~3.19.0` appears where a package declares it at all
+  (dsh-settings). Leaving the dev tree on `4.0.5` / `3.18.5` (the previous
+  resolved versions) produced unmet-peer warnings and a type surface that is not
+  the host's. The **peer ranges stay `>=4.0.5` / `>=3.18.5`**, so a `0.2.1-rc.x`
+  host still satisfies them; the exact pins live only in devDependencies.
+
+- **`pnpm-workspace.yaml` exempts the corridor's base libraries from the
+  release-age quarantine.** `minimumReleaseAge: 1440` rejected the first install
+  outright (`ERR_PNPM_NO_MATURE_MATCHING_VERSION`, five versions:
+  `cordis-plugin-group@1.1.0`, `cordis-plugin-include@1.1.0`,
+  `cordis-plugin-loader@1.1.0`, `cosmokit@1.9.0`, `schemastery@3.19.0` — all
+  published inside the window). The exemption list now names
+  `@deepseek-ai/cordis*`, `@deepseek-ai/cosmokit`, `@deepseek-ai/schemastery`
+  next to the existing `@deepseek-ai/dsh-*` glob, with the window still stated
+  explicitly. The list is deliberately scoped to the names the corridor
+  publishes.
+
+- **`apply_patch` is deliberately not added to `editTools`.** The corridor
+  guide leaves this conditional; in `0.2.2-rc.1` the tool is off: the base
+  bundle sets `applyPatch: false`, the Web `standard` preset sets
+  `applyPatch: false`, and `tool-fs`'s schema default is `false`. The check was
+  run against the published rc.1 tarballs (`@deepseek-ai/dsh-base`,
+  `@deepseek-ai/dsh-web-app`, `@deepseek-ai/dsh-tool-fs`), not only the source
+  snapshot. Adding the name would be a behaviour change for nobody. A deployer
+  who turns `applyPatch: true` on must add `apply_patch` to `editTools`,
+  otherwise the tool falls through to `unclassified: ask`; that sentence is now
+  in the README compatibility section.
+
+- **No deprecated or renamed API is used — measured, not assumed.** The scan
+  covers `tool-subagent-control/list-agents`, `modelSelectionSettings`,
+  `list_subagent_models`, `MenuTarget` / `useMenuTarget` / `ctx.menus`,
+  `maxParallelSubCalls`, `CodeRunFailedError`, `jsonSchemaToTs`,
+  `renderToolsSdk`, `defineContentToolFixture`, `assembly.tools`,
+  `dsh-invariants`, `dsh-client-ui-deepseek-model-label-1017`,
+  `send_button_click`, and the client-contract renames this plugin could have
+  touched (`PropsRenderFactories`, `ApprovalComposerProps`, `ChatViewInjected`,
+  `DraftFileUpload`, `SubmitAttempt`, `entry.write`, `applyEntryPatches`,
+  `SessionProjectionStateMap`, `conversation.composer`): zero hits in `src/`.
+  It is not a hit surface by construction — the plugin registers no tools, no
+  client composition rows and no bundle presets, reads no `system-prompt/assemble`
+  payload, and occupies only `conversation.input.left` and `settings.section`,
+  both of which kept their contracts.
+
+### Fixed
+
+- **The approval-mode menu portals to the document body.** The composer chip's
+  `Menu` is now rendered with `portal`. DSH `0.2.2` states the rule on the
+  `conversation.input.left` slot contract itself: fixed overlays in a composer
+  slot must portal to the document body because the docked composer clips them.
+  The prop already exists in `0.2.1-rc.5`'s `Menu` (default `false`), so the
+  same build keeps working on the earlier hosts; on implementations that do not
+  read the prop it is simply ignored, which is the old behaviour.
+
+### Documentation
+
+- `CONTEXT.md` moves the verified line to `0.2.2-rc.1`, records the
+  cordis/schemastery split (exact dev pins, wide peers), and keeps the install
+  floor at `0.2.1-rc.2`.
+- `README.md` / `README.zh.md` gain the `v0.11.0` compatibility section
+  (install floor, verified line, `apply_patch` note, deferred live
+  verification); the header version line, stale at `0.4.0` / `0.2.0`, now
+  tracks the release.
+- New audit doc
+  `docs/2026-11-05-dsh-v0-2-2-rc-1-compatibility-audit.md` records the
+  upstream diff check, the gate measurements, the zero-hit scan of the
+  corridor's deprecated/renamed API list, and every item deferred to the
+  host-upgrade round.
+
+0.11.0 is verified statically: `pnpm install` (15/15 `@deepseek-ai/dsh-*`
+devDeps at `0.2.2-rc.1`, plus cordis 4.1.0 / schemastery 3.19.0),
+`pnpm typecheck`, `pnpm test` (121 passed), `pnpm build`, and the
+compatibility gate computed above. The `apply_patch` default was re-checked
+against the published rc.1 tarballs. **Live verification (install gate, cold
+start, Web UI portal behaviour) is deferred to the host-upgrade round** — the
+local host still runs `0.2.1-rc.5`, so the checklist is in the new audit doc.
 
 ## [0.10.0] - 2026-11-01
 

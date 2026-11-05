@@ -1,5 +1,11 @@
 /**
  * ApprovalModeChip: the composer dock entry for switching approval modes.
+ *
+ * The slot lives in the composer tool row (`conversation.input.left`), which
+ * clips overflow. DSH 0.2.2 states the rule on the slot contract itself: fixed
+ * overlays in a composer slot must portal to the document body, because the
+ * docked composer contains them. The mode menu is a fixed overlay, so it is
+ * rendered with `portal` — without it the list can be clipped by the composer.
  */
 import { useState, useEffect } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
@@ -87,6 +93,7 @@ export function ApprovalModeChip({ cachedMode, switchMode, getDefaultMode, t }: 
         onSelect={handleSelect}
         onClose={() => { setOpen(false) }}
         side="top"
+        portal
         anchor={(
           <button
             type="button"

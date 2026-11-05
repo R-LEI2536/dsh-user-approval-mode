@@ -1,6 +1,6 @@
 # dsh-user-approval-mode
 
-**版本 0.2.0**
+**版本 0.11.0**
 
 [English](./README.md)
 
@@ -200,6 +200,17 @@ Web UI 状态独立管理，刷新时从服务器同步：
 - 一旦支持，本插件可以迁移到事件驱动方案，实现完整的 UI 同步
 
 ### DSH 版本兼容性
+
+**v0.11.0+ 要求 DSH ≥ 0.2.1-rc.2（按 0.2.2-rc.1 验证）**：
+
+15 条 `@deepseek-ai/dsh-*` devDependencies 精确钉到 `0.2.2-rc.1`；`@deepseek-ai/cordis` 与 `@deepseek-ai/schemastery` 的 dev 钉到宿主的 `4.1.0` / `3.19.0`。15 条 **peer 范围保持 `^0.2.1-rc.2`**（`cordis` / `schemastery` 的 peer 保持 `>=4.0.5` / `>=3.18.5`），因此**安装下限没有变化**：从 `0.2.1-rc.2` 起的每个 `0.2.x` 宿主都接受本版本——包含 `0.2.2-rc.1` 与更晚的 `0.2.2`/`0.2.x` 预发布——`0.2.1-rc.1` 与任何 `0.2.0-rc.*` 宿主仍被拒收。四点需要知道：
+
+- **模式菜单改为 portal。** 输入框 chip 的菜单渲染进 `document.body`，这是 DSH `0.2.2` 对 composer slot 的契约要求——停靠的输入框会裁切固定浮层。忽略该属性的旧宿主行为不变。
+- **`apply_patch` 刻意不做分类。** DSH `0.2.2-rc.1` 默认关闭该工具（base bundle 与 Web `standard` preset 均为 `applyPatch: false`，已用 registry 上的 rc.1 已发布 tarball 复核）。若部署方开启它，请把 `apply_patch` 加进 `editTools`（设置 → 审批模式），否则它会落到 `unclassified: ask`。
+- **门禁是实算的，不是推出来的。** 现役 peer 在 `0.2.2-rc.1` 与 `0.2.1-rc.5` 上均通过；只把 `@deepseek-ai/dsh-tools` 一条 peer 钉成 `0.2.1-rc.5` 的对照清单在 `0.2.2-rc.1` 上被拒。
+- **在 `0.2.2-rc.1` 宿主上安装可能出现 unmet peer 警告。** npm/pnpm 用默认预发布规则，`^0.2.1-rc.2` 不认 `0.2.2` 预发布；判据是宿主兼容门（`includePrerelease: true`，可通过）。这些警告是预期内的，不代表被拒收。
+
+0.11.0 按静态验证交付（`pnpm typecheck`、121 个测试、`pnpm build`，以及用宿主自带 `evaluatePluginCompatibility` 实算的安装门），面对真实的 `0.2.2-rc.1` 类型。**实机验证（安装门、冷启动、Web UI 的 portal 表现）推迟到宿主升级那一轮**——本机宿主仍为 `0.2.1-rc.5`；清单见 [`docs/2026-11-05-dsh-v0-2-2-rc-1-compatibility-audit.md`](docs/2026-11-05-dsh-v0-2-2-rc-1-compatibility-audit.md)。
 
 **v0.10.0+ 要求 DSH ≥ 0.2.1-rc.2（按 0.2.1-rc.5 验证）**：
 
