@@ -60,6 +60,19 @@ test('defaults: common DSH tools ship as defaults (not left to each deployment)'
   }
 })
 
+test('defaults: run_code ships auto-allowed as the PTC transport', () => {
+  // PTC agent-preset sessions expose only `run_code` to the model, and its
+  // program's `tools.*` sub-calls re-enter the same `tools/pre-execute`
+  // waterfall under their real names. Auto-allowing the transport is therefore
+  // what keeps request/auto-edit/smart from prompting once per program while
+  // still classifying every real action. Removing the name from the configured
+  // list (settings page or cordis base) restores the per-program prompt.
+  assert.ok(defaultList('autoAllowTools').includes('run_code'), 'autoAllowTools must default to include run_code')
+  for (const family of ['editTools', 'shellTools', 'readOnlyTools'] as const) {
+    assert.ok(!defaultList(family).includes('run_code'), `run_code is a transport, not a ${family} member`)
+  }
+})
+
 test('defaults: the previously shipped names are all still covered', () => {
   for (const name of ['write', 'edit', 'str_replace_editor']) {
     assert.ok(defaultList('editTools').includes(name), `dropped editTools default: ${name}`)

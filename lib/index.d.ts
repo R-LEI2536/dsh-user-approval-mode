@@ -125,5 +125,37 @@ export declare function getApprovalMode(session: Session, defaultMode: ApprovalM
  * @param mode - The mode to set.
  */
 export declare function setApprovalMode(session: Session, mode: ApprovalMode): void;
+/** The subset of a tool execution the PTC argument preview reads. */
+export interface PtcPreviewExecution {
+    readonly name: string;
+    readonly arguments: unknown;
+    /** Set only on a `run_code` program's inner tool dispatch (PTC sub-call). */
+    readonly parent?: unknown;
+}
+/**
+ * Build the one-line argument summary appended to a PTC sub-call's ask reason.
+ *
+ * Under the PTC agent preset the host approval dialog cannot show a
+ * program's inner-tool arguments: the client detail slot resolves only a
+ * top-level tool node's `command` (`ui-chat/.../ApprovalCommand.tsx`), while an
+ * inner call is nested in the `run_code` node's sub-calls. A human asked to
+ * approve `bash` or `write` therefore needs the command/path in the reason
+ * itself. Native calls are untouched: the dialog already shows their arguments,
+ * so this returns `undefined` when `exec.parent` is absent.
+ *
+ * Never adds an exposure surface: the same arguments are already durable in
+ * the `tool/ptc-dispatch-start` session event.
+ *
+ * @param exec - the pending execution (only `name`, `arguments`, `parent` are read).
+ * @returns A whitespace-collapsed, length-capped summary, or `undefined` for a native call.
+ */
+export declare function ptcArgumentPreview(exec: PtcPreviewExecution): string | undefined;
+/**
+ * Append a PTC sub-call's argument preview to an ask reason.
+ * @param reason - the reason the gate already built.
+ * @param exec - the pending execution.
+ * @returns The same reason for native calls; the annotated reason for PTC sub-calls.
+ */
+export declare function withPtcArgumentPreview(reason: string, exec: PtcPreviewExecution): string;
 export declare function apply(ctx: Context, config: VolatileConfig): void;
 //# sourceMappingURL=index.d.ts.map

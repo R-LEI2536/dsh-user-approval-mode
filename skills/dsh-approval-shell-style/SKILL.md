@@ -67,7 +67,18 @@ git -C /path/to/repo status --short
 - `sandbox_permissions` is only valid together with `justification`; omit both when approvals are disabled.
 - If a command did not run, report that it was not verified — never invent its output.
 
-## 6. Self-check
+## 6. PTC preset sessions
+
+In a session on the `ptc` agent preset the model can call only `run_code`; the other tools are reachable only as `tools.*` bindings inside the program. The gate still applies, one level down:
+
+- `run_code` itself is the transport and does not prompt. Do not read that as licence for what the program does.
+- Every `tools.write` / `tools.bash` / `tools.read` sub-call passes exactly the gate described above, under its real tool name. So the same rules apply: prefer `tools.read` / `tools.glob` / `tools.grep` over `tools.bash`, and keep `tools.bash` command text inside the read-only git grammar.
+- A PTC sub-call's approval prompt adds a `[args: …]` summary (the command or path, one line, up to 200 characters) because the host dialog cannot render a nested call's arguments. Read it before approving.
+- A rejected sub-call raises `ToolCallError` for that binding only. Catch it, do not retry the same call in another shape, and report what was not verified.
+- Approval prompts wait inside the `run_code` run budget (default 120 s, capped at 600 s). Batch a program's gated calls instead of queueing many prompts, or the run can end while it waits.
+- A direct `import('node:fs')` / `node:child_process` inside the program bypasses this gate entirely and is bounded only by the sandbox. Do not use it to route around a prompt.
+
+## 7. Self-check
 
 - Is every segment a read-only `git` subcommand or an `echo`?
 - Any quotes inside a git segment? Any redirection, `$`, backtick, or parentheses anywhere?
@@ -77,6 +88,6 @@ git -C /path/to/repo status --short
 
 ## Maintenance
 
-The behaviour source is this plugin's `src/read-only-git.ts`; its rationale and accepted boundaries are in `docs/adr/0003-read-only-command-fast-path.md`. Keep this skill in sync when the parser changes. An approved chain is logged as `[dsh-user-approval[read-only-git]] decision=allow detail=<label>`.
+The behaviour source is this plugin's `src/read-only-git.ts`; its rationale and accepted boundaries are in `docs/adr/0003-read-only-command-fast-path.md`. PTC-preset behaviour and its limits are in `docs/adr/0004-run-code-is-a-transport.md`. Keep this skill in sync when the parser changes. An approved chain is logged as `[dsh-user-approval[read-only-git]] decision=allow detail=<label>`.
 
 `description` is the only trigger surface. The session catalog renders `- \`name\`: description` and nothing else: whitespace is collapsed, and the text is truncated with `...` past `catalogDescriptionMaxLength` (500 characters by default in `tool-skill`). `whenToUse` is stored and shown in the UI, but it never reaches the model's decision, so a cue that lives only there is a cue that never fires. Keep the situation that should make an agent load this skill in the first clause of `description`, and keep the whole line under 500 characters.

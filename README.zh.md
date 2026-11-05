@@ -25,6 +25,7 @@
 - **只读 git 快路径**：严格解析后的只读命令链（`git status`、`git log`、`git diff` 等，用 `&&` `;` `|` 或换行串起来）外加 `echo "…"` 装饰行，在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。设置页有开关（`readOnlyGitCommands`），也可在 `cordis.yml` 里钉 base。
 - **自带 skill**：包内随附 `dsh-approval-shell-style`，代理可以加载它来写「审批友好」的命令（快路径语法、预期的弹窗、被拒后的处理）。插件装着的会话都能在技能目录里看到，卸载插件即消失。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
+- **PTC preset 兼容**：agent preset 选 `ptc` 时模型只能直调 `run_code`；插件把它当传输层直接放行，程序内每个 `tools.*` 子调用仍按真实工具名逐个过闸，并在审批弹窗里附上命令/路径摘要
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
 - **内存状态**：会话级审批模式存储在内存中，重启后恢复默认
@@ -43,6 +44,8 @@
 | `off` | 允许 | 允许 | 允许 | 允许 | 禁用，恢复 DSH 默认行为 |
 
 ¹ 例外：严格解析后的只读命令（`git status` / `git log` / `git diff` 这类单条、`echo "…"` 装饰行，或用 `&&` `;` `|` 串起来的组合）在这三个模式下免审直放——见[只读 git 命令](#只读-git-命令)。
+
+**PTC agent preset 下这张表同样成立。** `ptc` preset 只让模型直接调用 `run_code`，其它原生工具只能作为程序内的 `tools.*` 绑定调用。`run_code` 本体是传输层，默认直接放行（它在 `autoAllowTools` 里）；程序内每个子调用仍按上表裁决——request 下的 `write` 子调用要审批，smart 下的 `bash` 子调用走五步流水线，等等。细节与限制见下文「已知限制 → PTC preset」。
 
 ### 模式详情
 
@@ -278,6 +281,18 @@ Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。
 - **插件重载会排空在飞分类。** 插件拥有一个 `AbortController`，其 signal 注入所有在飞 LLM 调用；卸载时 abort + `Promise.allSettled` drain 之后，新插件实例才接手。卡住的请求不会跨重载污染下游。
 - **两个 seam 都缺失时退回 ask。** 若 host 没有 `ctx.llm` 或 `ctx.agentDefaultModel`，smart 模式下每个 shell 调用都退回 ask（`detail: 'llm-unavailable'` 或 `'no-default-model'`）。分类器永远不会在「危险清单 + 分类器批准」之外的路径上静默放行。
 
+### PTC preset（`run_code`）
+
+agent preset 选 `ptc` 时，模型只能直接调用 `run_code`，其它原生工具只能作为程序内的 `tools.*` 绑定调用。插件的处理，以及它管不到的地方：
+
+- **传输层不弹窗。** `run_code` 默认在 `autoAllowTools` 里，request / auto-edit / smart / yolo / off 都直接放行，程序代码也不发给 smart 分类器。真正的动作是程序内每个子调用：它们带着 `parent` 和真实的工具名重新进入同一个 `tools/pre-execute` 闸门，按上表裁决。
+- **弹窗补参数。** 宿主的审批面板只解析顶层工具节点的 `command`；PTC 子调用是 `run_code` 节点的嵌套子调用，面板看不到参数。插件因此在子调用的 ask reason 末尾追加 `[args: …]`（bash 显示命令、write 显示路径，其余显示 JSON；单行、截断 200 字符）。原生调用的 reason 不变。
+- **直连 Node 的效果不受闸门约束。** 程序里 `import('node:fs')`、`node:child_process` 直接读写文件，不经过工具调用，插件看不到。唯一防线是沙箱模式（切模式时联动写入的 `workspace-write` 等，见[配置选项](#配置选项)里的 `sandboxDefaults`）。因此 PTC preset 下 request 模式**不等价于**「每次写盘都要批准」。
+- **被拒与超时。** 子调用被拒只让该绑定抛 `ToolCallError`，程序可以 catch 后重试或换路，每次重试都会重新过闸。审批等待计入 `run_code` 的运行预算（默认 120 秒、上限 600 秒），大量审批可能让程序在等待中被中止。
+- **逃生舱。** 从 `autoAllowTools` 删掉 `run_code`，恢复「每个程序弹一次」（此时弹窗里仍看不到程序代码，因为宿主的审批面板只显示 shell 命令）。模型直接调用被折叠的原生工具时，宿主在进入闸门之前就拒绝——这既不是插件放行，也不是插件拦截。
+
+需要严格逐次写盘审批的会话，不要用 PTC preset；确实要用时，把沙箱收紧到 `read-only`，或者接受上述边界。
+
 ## 自定义审批弹窗文案
 
 工具需要审批时弹窗里显示的文本来自 `askReason` 模板。可在 `cordis.yml` 中
@@ -293,6 +308,10 @@ Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。
 
 可用占位符：`{tool}`（工具名）、`{mode}`（当前审批模式）、
 `{family}`（edit | shell | readonly | other）。
+
+PTC 程序内的工具子调用会在模板渲染结果之后追加 `[args: …]`（命令或路径摘要，
+单行、截断 200 字符），因为宿主弹窗无法显示嵌套调用的参数。这段后缀不可配置，
+也没有占位符控制它；原生调用不会附加。
 
 **为什么这是手动配置**：这段文本在服务端生成并传给上游 DSH 的审批弹窗，
 插件在那一步没有任何 locale 信号（语言设置住在客户端）。最简单也最可预测
@@ -350,7 +369,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `editTools` | 逗号分隔文本（集合） | auto-edit 模式下自动放行 |
 | `shellTools` | 逗号分隔文本（集合） | request / auto-edit 模式下都要审批 |
 | `readOnlyTools` | 逗号分隔文本（集合） | 任何模式都放行 |
-| `autoAllowTools` | 逗号分隔文本（集合） | 与族无关、直接绕过审批 |
+| `autoAllowTools` | 逗号分隔文本（集合） | 与族无关、直接绕过审批（默认含 `run_code`，见 PTC preset） |
 | `readOnlyGitCommands` | 开关 | 严格解析后的只读命令（或命令链，外加 `echo "…"` 行）免审（默认开） |
 | `sandboxDefaults` | 每模式下拉框 | 切到该模式时联动写入的 sandbox 策略 |
 | `askReason` | 多行文本 | 审批弹窗文案模板（占位符：`{tool}` / `{mode}` / `{family}`） |
@@ -390,7 +409,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 - `editTools`: `['write', 'edit', 'str_replace_editor', 'update_goal']`
 - `shellTools`: `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']`
 - `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']`
-- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']`
+- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']`
 - `unclassified`: `ask`
 
 默认值里带上较新的 Agent Teams / ReMe 工具名是安全的：host 没注册的工具名
@@ -412,7 +431,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
         editTools: ['write', 'edit', 'str_replace_editor', 'update_goal']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
         readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']
-        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']
+        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']
         
         # 未分类工具的策略：'ask'（更安全）或 'allow'（更快）
         unclassified: ask
@@ -442,7 +461,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor', 'update_goal']` | 分类为"编辑"族的工具（文件修改） |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | 分类为"Shell"族的工具（命令执行） |
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | 分类为"只读"族的工具（始终允许） |
-| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']` | 始终绕过审批的工具 |
+| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']` | 始终绕过审批的工具。`run_code` 在此是因为 PTC preset 下它是传输层，程序内子调用仍逐个过闸；删掉它则改为拦程序本体 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
 | `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的只读命令链而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
@@ -469,6 +488,11 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
 | **Shell** | `bash`, `pwsh`, `tool:bash`, `tool:pwsh` | 命令执行工具 |
 | **只读** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents`, `job_list`, `get_goal` | 安全浏览工具（始终允许） |
 | **其他** | *所有其他工具* | 未分类工具，行为取决于 `unclassified` 配置 |
+
+`run_code` 是 PTC preset 的传输层，刻意不放进任何族：它默认在 `autoAllowTools`
+里直接放行，审批落在程序内每个子调用上（子调用带真实工具名，按上表裁决）。
+把它加进族名单不会改变结果（`autoAllowTools` 先检查），只有从 `autoAllowTools`
+删掉它，才会改为拦程序本体。
 
 ### 只读 git 命令
 
@@ -528,17 +552,20 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
   会覆盖插件版（插件版 rank 600）。
 - **打包** —— `skills/` 必须在 `files` 白名单里；漏掉时插件照常加载但只打一
   条警告、不贡献 skill（与漏掉 `cordis.patch.yml` 同类的安装路径缺陷）。
+- **PTC 契约** —— skill 也说明 PTC preset 下的规则：`run_code` 本体不弹审批、
+  程序内 `tools.*` 绑定调用逐个过闸、绑定被拒抛 `ToolCallError` 后不要换路绕过。
 
 ## 工作原理
 
 1. **工具执行拦截**：插件监听 `tools/pre-execute` 事件
-2. **族分类**：确定工具属于哪个族
-3. **只读快路径**：属于 shell 族、但每一环都是严格解析后的只读命令的调用，直接放行
-4. **模式检查**：评估当前审批模式
-5. **决策**：对需要审批的工具返回 `{ kind: 'ask' }`，或允许执行
-6. **沙箱同步**：切换模式时自动调整沙箱策略
-7. **状态存储**：审批模式使用内存存储（WeakMap），DSH 重启后恢复默认
-8. **UI同步**：Web UI 芯片通过 React 管理状态，刷新时从服务器同步
+2. **PTC 传输层**：`run_code` 在 `autoAllowTools` 里被直接放行；它的程序内子调用回到第 1 步，用真实工具名重新过闸
+3. **族分类**：确定工具属于哪个族
+4. **只读快路径**：属于 shell 族、但每一环都是严格解析后的只读命令的调用，直接放行
+5. **模式检查**：评估当前审批模式
+6. **决策**：对需要审批的工具返回 `{ kind: 'ask' }`，或允许执行。PTC 子调用的 ask reason 末尾追加参数摘要
+7. **沙箱同步**：切换模式时自动调整沙箱策略
+8. **状态存储**：审批模式使用内存存储（WeakMap），DSH 重启后恢复默认
+9. **UI同步**：Web UI 芯片通过 React 管理状态，刷新时从服务器同步
 
 ## 依赖
 

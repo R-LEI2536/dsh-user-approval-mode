@@ -175,8 +175,8 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .description('Tools classified as the "read-only" family. Always allowed regardless of mode.')
     .volatile(),
   autoAllowTools: Schema.array(Schema.string())
-    .default(['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list'])
-    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting).')
+    .default(['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code'])
+    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting). `run_code` ships here because under the PTC agent preset it is the transport: its program\'s `tools.*` sub-calls still pass this same gate and are classified by their real tool name. Remove it from the list to gate the transport itself (one prompt per program).')
     .volatile(),
   unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])
     .default('ask')
@@ -234,6 +234,75 @@ export function getApprovalMode(session: Session, defaultMode: ApprovalMode): Ap
  */
 export function setApprovalMode(session: Session, mode: ApprovalMode): void {
   sessionModes.set(session, mode)
+}
+
+/** The subset of a tool execution the PTC argument preview reads. */
+export interface PtcPreviewExecution {
+  readonly name: string
+  readonly arguments: unknown
+  /** Set only on a `run_code` program's inner tool dispatch (PTC sub-call). */
+  readonly parent?: unknown
+}
+
+/** Longest argument summary appended to one PTC sub-call's ask reason. */
+const PTC_ARGUMENT_PREVIEW_MAX_CHARS = 200
+/** Argument keys whose string value reads better than the whole JSON body. */
+const PTC_ARGUMENT_PREVIEW_KEYS = ['command', 'path', 'file_path', 'filePath', 'file'] as const
+
+/**
+ * Build the one-line argument summary appended to a PTC sub-call's ask reason.
+ *
+ * Under the PTC agent preset the host approval dialog cannot show a
+ * program's inner-tool arguments: the client detail slot resolves only a
+ * top-level tool node's `command` (`ui-chat/.../ApprovalCommand.tsx`), while an
+ * inner call is nested in the `run_code` node's sub-calls. A human asked to
+ * approve `bash` or `write` therefore needs the command/path in the reason
+ * itself. Native calls are untouched: the dialog already shows their arguments,
+ * so this returns `undefined` when `exec.parent` is absent.
+ *
+ * Never adds an exposure surface: the same arguments are already durable in
+ * the `tool/ptc-dispatch-start` session event.
+ *
+ * @param exec - the pending execution (only `name`, `arguments`, `parent` are read).
+ * @returns A whitespace-collapsed, length-capped summary, or `undefined` for a native call.
+ */
+export function ptcArgumentPreview(exec: PtcPreviewExecution): string | undefined {
+  if (exec.parent === undefined) return undefined
+  const args = exec.arguments
+  let text: string | undefined
+  if (args !== null && typeof args === 'object' && !Array.isArray(args)) {
+    for (const key of PTC_ARGUMENT_PREVIEW_KEYS) {
+      const candidate = (args as Record<string, unknown>)[key]
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        text = candidate
+        break
+      }
+    }
+  }
+  if (text === undefined) {
+    try {
+      text = JSON.stringify(args)
+    } catch {
+      text = String(args)
+    }
+  }
+  if (text === undefined) return undefined
+  const oneLine = text.replace(/\s+/gu, ' ').trim()
+  if (oneLine.length === 0) return undefined
+  return oneLine.length <= PTC_ARGUMENT_PREVIEW_MAX_CHARS
+    ? oneLine
+    : `${oneLine.slice(0, PTC_ARGUMENT_PREVIEW_MAX_CHARS)}…`
+}
+
+/**
+ * Append a PTC sub-call's argument preview to an ask reason.
+ * @param reason - the reason the gate already built.
+ * @param exec - the pending execution.
+ * @returns The same reason for native calls; the annotated reason for PTC sub-calls.
+ */
+export function withPtcArgumentPreview(reason: string, exec: PtcPreviewExecution): string {
+  const preview = ptcArgumentPreview(exec)
+  return preview === undefined ? reason : `${reason} [args: ${preview}]`
 }
 
 export function apply(ctx: Context, config: VolatileConfig): void {
@@ -425,7 +494,10 @@ export function apply(ctx: Context, config: VolatileConfig): void {
           logSmartDecision('ask', `detail=sandbox-escalation ${effective}->${escalation.requested}`)
           return {
             kind: 'ask',
-            reason: `sandbox 升级 ${effective} → ${escalation.requested}，需用户确认（${escalation.justification}）`,
+            reason: withPtcArgumentPreview(
+              `sandbox 升级 ${effective} → ${escalation.requested}，需用户确认（${escalation.justification}）`,
+              exec,
+            ),
           }
         }
       }
@@ -441,11 +513,14 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       logSmartDecision('ask', `detail=${verdict.detail}${modelSuffix(verdict.selection)}`)
       return {
         kind: 'ask',
-        reason: (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
-          .replace('{tool}', exec.name)
-          .replace('{mode}', mode)
-          .replace('{family}', family)
-          + (verdict.detail ? ` [smart: ${verdict.detail}]` : ''),
+        reason: withPtcArgumentPreview(
+          (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
+            .replace('{tool}', exec.name)
+            .replace('{mode}', mode)
+            .replace('{family}', family)
+            + (verdict.detail ? ` [smart: ${verdict.detail}]` : ''),
+          exec,
+        ),
       }
     }
 
@@ -457,10 +532,13 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     if (!needsAsk(mode, family)) return decision
     return {
       kind: 'ask',
-      reason: (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
-        .replace('{tool}', exec.name)
-        .replace('{mode}', mode)
-        .replace('{family}', family),
+      reason: withPtcArgumentPreview(
+        (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
+          .replace('{tool}', exec.name)
+          .replace('{mode}', mode)
+          .replace('{family}', family),
+        exec,
+      ),
     }
   })
 

@@ -47,7 +47,7 @@ const FALLBACK: Required<Config> = {
   editTools: ['write', 'edit', 'str_replace_editor', 'update_goal'],
   shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh'],
   readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal'],
-  autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list'],
+  autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code'],
   unclassified: 'ask',
   readOnlyGitCommands: true,
   sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
