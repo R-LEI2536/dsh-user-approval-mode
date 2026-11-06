@@ -7,8 +7,8 @@ export interface ApprovalModeChipInjected {
     cachedMode: ApprovalMode | null;
     /** Switch to a new approval mode by executing the /approval-mode command. */
     switchMode: (mode: string) => Promise<string | null>;
-    /** Get the default approval mode from server config. */
-    getDefaultMode: () => Promise<string>;
+    /** Re-read the session's actual mode from the server; null when unavailable or superseded. */
+    refreshMode: () => Promise<ApprovalMode | null>;
 }
 /** Full component props: runtime share + injected share + locale seat. */
 export type ApprovalModeChipProps = PropsRuntime<'conversation.input.left'> & InjectFace<ApprovalModeChipInjected> & {
@@ -19,5 +19,5 @@ export type ApprovalModeChipProps = PropsRuntime<'conversation.input.left'> & In
  * @param props - composed slot props.
  * @returns the chip element.
  */
-export declare function ApprovalModeChip({ cachedMode, switchMode, getDefaultMode, t }: ApprovalModeChipProps): import("react").JSX.Element;
+export declare function ApprovalModeChip({ cachedMode, switchMode, refreshMode, t }: ApprovalModeChipProps): import("react").JSX.Element;
 //# sourceMappingURL=ApprovalModeChip.d.ts.map

@@ -11,6 +11,7 @@ import { useState, useEffect } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { Menu, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ApprovalMode } from '../index'
+import { APPROVAL_MODES } from './mode-text'
 import type { ApprovalKey } from './locales'
 import css from './ApprovalModeChip.module.css'
 
@@ -20,8 +21,8 @@ export interface ApprovalModeChipInjected {
   cachedMode: ApprovalMode | null
   /** Switch to a new approval mode by executing the /approval-mode command. */
   switchMode: (mode: string) => Promise<string | null>
-  /** Get the default approval mode from server config. */
-  getDefaultMode: () => Promise<string>
+  /** Re-read the session's actual mode from the server; null when unavailable or superseded. */
+  refreshMode: () => Promise<ApprovalMode | null>
 }
 
 /** Full component props: runtime share + injected share + locale seat. */
@@ -30,35 +31,34 @@ export type ApprovalModeChipProps =
   & InjectFace<ApprovalModeChipInjected>
   & { t: (key: ApprovalKey) => string }
 
-const DEFAULT_MODES: ApprovalMode[] = ['off', 'request', 'auto-edit', 'smart', 'yolo']
-
 /**
  * Render the approval mode selector chip.
  * @param props - composed slot props.
  * @returns the chip element.
  */
-export function ApprovalModeChip({ cachedMode, switchMode, getDefaultMode, t }: ApprovalModeChipProps) {
-  // Sync cache peek: revisit a previously seen session shows the right mode on the
-  // very first frame, with no 'off' flicker and no fetch. First-time visit falls
-  // back to 'off' until the effect below resolves.
+export function ApprovalModeChip({ cachedMode, switchMode, refreshMode, t }: ApprovalModeChipProps) {
+  // First frame paints the cached mode (no 'off' flicker on revisit); the
+  // effect below revalidates against the server and corrects it if stale.
   const [currentMode, setCurrentMode] = useState<ApprovalMode>(() => cachedMode ?? 'off')
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
 
-  // One-shot fetch on mount only. The previous `[getDefaultMode]` dep re-fired on
-  // every chip re-render (inject factory mints a fresh closure per render),
-  // so opening the menu or switching modes issued redundant server queries.
-  // Empty deps + cache-hit early return covers the revisit case for free.
+  // Revalidate on every mount. The cache is only a first-paint hint: a mode
+  // changed outside this chip (slash command, another window) must not stay
+  // displayed after leaving this session and coming back. Empty deps: the slot
+  // re-keys per session, so every revisit remounts the chip; the inject factory
+  // mints a fresh closure per render and must not re-trigger the query.
+  // refreshMode returns null when a chip click won the race or the query
+  // failed; the displayed value then stays as-is.
   useEffect(() => {
-    if (cachedMode) return
-    getDefaultMode().then((mode) => {
-      setCurrentMode(mode as ApprovalMode)
+    refreshMode().then((mode) => {
+      if (mode !== null) setCurrentMode(mode)
     }).catch(() => {
-      // Keep default 'off' if failed to get mode
+      // Keep the cached/first-paint value if the server query failed.
     })
   }, [])
 
-  const options = DEFAULT_MODES
+  const options = APPROVAL_MODES
 
   const handleSelect = async (mode: string): Promise<void> => {
     if (mode === currentMode || switching) return

@@ -32,6 +32,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ApprovalModeChip, type ApprovalModeChipInjected } from './ApprovalModeChip'
 import { ApprovalModeSettings, type ApprovalModeSettingsInjected } from './ApprovalModeSettings'
+import { parseApprovalMode } from './mode-text'
 import type { ApprovalMode, Config } from '../index'
 import { en, zh, enPage, zhPage, type ApprovalKey, type ApprovalPageKey } from './locales'
 
@@ -63,12 +64,14 @@ const SETTINGS_ORDER = 1100
 export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'configForms']
 
 /**
- * Per-session mode cache for the chip. Survives chip unmount/remount on session
- * switches so the chip can synchronously read the last displayed mode (no 'off'
- * flicker on revisit) and skip the server query entirely on cache hit. The Map
- * lives on the module scope, so a DSH restart (browser reload / HMR) drops it
- * along with everything else — no explicit cleanup needed. Bounded by the user's
- * active session count.
+ * Per-session mode cache for the chip — a first-paint hint, not the source of
+ * truth. Survives chip unmount/remount on session switches so a revisit paints
+ * the last known mode with no 'off' flicker, while the mount effect revalidates
+ * against the server and corrects the display. Written by a successful chip
+ * switch and by a refresh that wins its race against a switch. The Map lives on
+ * the module scope, so a DSH restart (browser reload / HMR) drops it along with
+ * everything else — no explicit cleanup needed. Bounded by the user's active
+ * session count.
  */
 const sessionModeCache = new Map<SessionId, ApprovalMode>()
 
@@ -116,23 +119,21 @@ export function apply(ctx: ClientContext): void {
         console.log('[approval-mode] Successfully switched to:', mode)
         return null
       },
-      getDefaultMode: async () => {
-        // Cache hit: return immediately, no server roundtrip.
-        const cached = sessionModeCache.get(sessionId)
-        if (cached) return cached
-        // Cache miss: query the server and backfill the cache.
+      refreshMode: async () => {
+        // The cache is only a first-paint hint; the server is the source of
+        // truth. Always ask, so a mode changed outside this chip (slash
+        // command, another window) cannot stay displayed after a revisit.
+        const before = sessionModeCache.get(sessionId)
         const result = await ctx.remote.commands.execute(sessionId, '/approval-mode', [])
-        if (result.ok && result.value?.result.kind === 'success') {
-          // Parse mode from "current approval mode: <mode> (available: ...)"
-          const text = result.value.result.text
-          if (text) {
-            const match = text.match(/current approval mode: (\w+)/)
-            const mode = match ? match[1] : 'off'
-            sessionModeCache.set(sessionId, mode as ApprovalMode)
-            return mode
-          }
-        }
-        return 'off'
+        if (!result.ok || result.value?.result.kind !== 'success') return null
+        const mode = parseApprovalMode(result.value.result.text)
+        if (mode === null) return null
+        // A chip click completed while the query was in flight: its value is
+        // newer than this answer, so leave the cache and the display alone.
+        if (sessionModeCache.get(sessionId) !== before) return null
+        sessionModeCache.set(sessionId, mode)
+        if (mode !== before) console.log('[approval-mode] refreshed:', mode, '(was', before ?? 'none', ')')
+        return mode
       },
     }),
   }, ApprovalModeChip))
