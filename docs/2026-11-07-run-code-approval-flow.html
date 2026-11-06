@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>只放行工具调用 · run_code 新流程</title>
+<style>
+:root{
+  --paper:#ECF1EF;
+  --paper-2:#F7F9F8;
+  --ink:#14211D;
+  --muted:#576661;
+  --rule:#B6C4BF;
+  --rule-strong:#7F928C;
+  --teal:#0F6B6E;
+  --teal-wash:#DCE9E7;
+  --amber:#A95F1B;
+  --amber-wash:#F3E6D6;
+  --green:#2F6B47;
+  --green-wash:#DFEAE3;
+  --red:#A23B2D;
+  --red-wash:#F0DFDB;
+  --mono:"SFMono-Regular","JetBrains Mono","Cascadia Code",ui-monospace,monospace;
+  --sans:"PingFang SC","Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --serif:"Songti SC","Noto Serif CJK SC","Source Han Serif SC","SimSun",serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:15.5px;
+  line-height:1.72;
+  background-color:var(--paper);
+  background-image:
+    linear-gradient(rgba(20,33,29,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(20,33,29,.045) 1px,transparent 1px);
+  background-size:32px 32px,32px 32px;
+}
+body::before{
+  content:"";
+  position:fixed;inset:0;pointer-events:none;z-index:-1;
+  background:radial-gradient(900px 500px at 78% -8%,rgba(15,107,110,.10),transparent 62%);
+}
+a{color:var(--teal);text-decoration-thickness:1px;text-underline-offset:3px}
+code{
+  font-family:var(--mono);
+  font-size:.88em;
+  background:rgba(20,33,29,.055);
+  border:1px solid rgba(20,33,29,.10);
+  padding:.08em .34em;
+  border-radius:2px;
+  white-space:nowrap;
+}
+.masthead{
+  max-width:1180px;margin:0 auto;padding:56px 32px 30px;position:relative;
+  border-bottom:2px solid var(--ink);
+}
+.kicker{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--muted);margin:0 0 18px}
+h1{
+  font-family:var(--serif);
+  font-weight:600;
+  font-size:clamp(2.4rem,5.4vw,4.4rem);
+  line-height:1.12;
+  letter-spacing:.01em;
+  margin:0 0 18px;
+  max-width:15ch;
+}
+.lede{max-width:64ch;margin:0;color:var(--muted);font-size:1.03rem}
+.lede strong{color:var(--ink)}
+.brief{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  margin:28px 0 0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);
+}
+.brief > div{padding:12px 16px 14px;border-right:1px solid var(--rule)}
+.brief > div:last-child{border-right:0}
+.brief dt{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.04em}
+.brief dd{margin:4px 0 0;font-size:.86rem;line-height:1.55}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:22px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.stamp{
+  position:absolute;right:34px;top:64px;
+  border:2px solid var(--red);color:var(--red);
+  font-family:var(--mono);font-size:12px;letter-spacing:.22em;
+  padding:8px 12px;transform:rotate(-7deg);
+  background:rgba(236,241,239,.7);
+}
+.layout{
+  max-width:1180px;margin:0 auto;padding:0 32px 90px;
+  display:grid;grid-template-columns:minmax(0,1fr) 272px;gap:60px;align-items:start;
+}
+.main{min-width:0}
+.sidebar{padding-top:48px}
+.section{margin-top:58px;padding-top:18px;border-top:1px solid var(--rule-strong)}
+.section h2{font-size:1.34rem;line-height:1.3;margin:0 0 8px;font-weight:700;letter-spacing:.01em}
+.sub{color:var(--muted);margin:0 0 22px;max-width:70ch}
+.stage{
+  display:inline-block;font-family:var(--mono);font-size:10px;line-height:1;
+  padding:3px 6px;border:1px solid var(--rule-strong);color:var(--muted);
+  margin-left:8px;vertical-align:2px;letter-spacing:.03em;
+}
+.stage.new{color:var(--teal);border-color:var(--teal);background:var(--teal-wash)}
+.timeline{margin:28px 0 0;border-top:1px solid var(--rule)}
+.beat{
+  position:relative;margin-left:6px;padding:24px 0 24px 28px;
+  border-bottom:1px solid var(--rule);border-left:1px solid var(--rule);
+}
+.beat::before{
+  content:"";position:absolute;left:-5px;top:30px;width:9px;height:9px;border-radius:50%;
+  background:var(--paper);border:1px solid var(--teal);
+}
+.beat.end::before{background:var(--red);border-color:var(--red)}
+.beat h3{margin:0 0 6px;font-size:1.04rem;line-height:1.45}
+.beat p{margin:0 0 10px;color:var(--muted);font-size:.92rem}
+.snippet{
+  background:#12211D;color:#E9F1ED;border-left:3px solid var(--teal);
+  padding:13px 16px;margin:10px 0 0;overflow:auto;
+  font-family:var(--mono);font-size:12.5px;line-height:1.7;
+}
+.snippet .c{color:#8FA6A0}
+.snippet .k{color:#E6B36A}
+.snippet .s{color:#9FD3B4}
+.trace{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:10px 18px;
+  margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--rule);
+}
+.trace dt{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.04em}
+.trace dd{margin:2px 0 0;font-size:.82rem;color:var(--muted)}
+.trace dd strong{color:var(--ink);font-weight:600}
+.paths{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0 0}
+.path{border:1px solid var(--rule-strong);background:rgba(247,249,248,.72);padding:14px 15px;min-width:0}
+.path.direct{border-top:4px solid var(--red)}
+.path.sub{border-top:4px solid var(--teal)}
+.path h4{margin:0 0 2px;font-size:.93rem}
+.path .plabel{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.path ul{list-style:none;padding:0;margin:12px 0 0;font-size:.82rem}
+.path li{padding:5px 0;border-top:1px dotted var(--rule);color:var(--muted)}
+.path li b{color:var(--ink);font-weight:600}
+.path .snippet{margin-top:10px;font-size:11.5px;padding:10px 12px}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:26px 0 0}
+.rule{border-top:3px solid var(--teal);padding-top:10px}
+.rule b{display:block;font-size:.97rem;margin-bottom:4px}
+.rule span{color:var(--muted);font-size:.87rem}
+.code-panel{
+  background:#12211D;color:#E9F1ED;border:1px solid #0B1512;
+  padding:20px 22px;margin:22px 0 8px;overflow:auto;
+  font-family:var(--mono);font-size:13px;line-height:1.85;
+  white-space:pre;tab-size:2;
+  box-shadow:5px 5px 0 rgba(20,33,29,.14);
+}
+.code-panel .c{color:#8FA6A0}
+.code-panel .k{color:#E6B36A}
+.code-panel .s{color:#9FD3B4}
+.caption{font-size:.82rem;color:var(--muted);margin:8px 0 0}
+.matrix-wrap{overflow-x:auto;margin-top:20px}
+table.matrix{border-collapse:collapse;width:100%;min-width:720px}
+table.matrix th,table.matrix td{border-bottom:1px solid var(--rule);padding:11px 12px;text-align:left;vertical-align:top;font-size:.9rem}
+table.matrix thead th{
+  border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);
+  font-size:.78rem;font-weight:600;color:var(--muted);white-space:nowrap;
+}
+table.matrix td:first-child,table.matrix th:first-child{font-family:var(--mono);white-space:nowrap}
+table.compact{min-width:560px}
+.badge{
+  display:inline-block;font-family:var(--mono);font-size:10.5px;line-height:1;
+  padding:4px 7px;border:1px solid currentColor;border-radius:2px;letter-spacing:.03em;
+  vertical-align:1px;white-space:nowrap;
+}
+.badge.ask{color:var(--amber);background:var(--amber-wash)}
+.badge.allow{color:var(--green);background:var(--green-wash)}
+.badge.none{color:var(--muted);background:transparent}
+.examples{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.example{border:1px solid var(--rule-strong);background:rgba(247,249,248,.72);padding:14px 15px;min-width:0}
+.example.allow{border-top:4px solid var(--green)}
+.example.ask{border-top:4px solid var(--amber)}
+.example h3{margin:0 0 6px;font-size:.93rem}
+.example .snippet{margin:8px 0 0;font-size:11.5px;padding:10px 12px;border-left-width:2px;white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible}
+.example p{margin:9px 0 0;color:var(--muted);font-size:.82rem}
+.callout{
+  margin:20px 0 0;padding:14px 16px;border-left:4px solid var(--teal);
+  background:var(--teal-wash);font-size:.92rem;
+}
+.callout b{display:block;margin-bottom:3px}
+.steps{list-style:none;counter-reset:step;margin:22px 0 0;padding:0;border-top:1px solid var(--rule)}
+.steps li{counter-increment:step;display:grid;grid-template-columns:44px minmax(0,1fr);gap:14px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.steps li::before{content:counter(step,decimal-leading-zero);font-family:var(--mono);font-size:12px;color:var(--teal);padding-top:3px}
+.steps b{display:block;margin-bottom:2px}
+.steps span{color:var(--muted);font-size:.88rem}
+.steps .miss{color:var(--red);font-family:var(--mono);font-size:11.5px;display:inline-block;margin-top:4px}
+.defects{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;margin-top:16px}
+.defect{padding:12px 0;border-bottom:1px solid var(--rule)}
+.defect b{font-size:.9rem}
+.defect p{margin:2px 0 0;color:var(--muted);font-size:.84rem}
+.todo{counter-reset:todo;list-style:none;padding:0;margin:18px 0 0}
+.todo li{counter-increment:todo;display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;padding:9px 0;border-bottom:1px dotted var(--rule)}
+.todo li::before{content:counter(todo);font-family:var(--mono);font-size:11px;color:var(--muted);padding-top:3px}
+.rejected{list-style:none;padding:0;margin:18px 0 0}
+.rejected li{padding:9px 0;border-bottom:1px solid var(--rule);color:var(--muted);font-size:.9rem}
+.rejected li b{color:var(--ink);text-decoration:line-through;text-decoration-color:var(--red);text-decoration-thickness:1px}
+.questions{list-style:none;padding:0;margin:18px 0 0}
+.questions li{padding:10px 0 10px 32px;border-bottom:1px solid var(--rule);position:relative;font-size:.9rem}
+.questions li::before{content:"?";position:absolute;left:0;top:10px;font-family:var(--mono);color:var(--teal);font-size:12px;line-height:1.72}
+.side-block{border-top:1px solid var(--ink);padding:12px 0 18px}
+.side-block h3{margin:0 0 8px;font-size:.82rem;font-family:var(--mono);font-weight:600;letter-spacing:.04em}
+.side-block dl{margin:0;font-size:.82rem}
+.side-block dt{font-family:var(--mono);font-size:.78rem;color:var(--teal);margin-top:7px}
+.side-block dd{margin:0;color:var(--muted)}
+.side-block ol{margin:0;padding-left:18px;color:var(--muted);font-size:.82rem}
+.side-block ol li{margin:6px 0}
+.side-block p{margin:0;color:var(--muted);font-size:.82rem}
+.footer{
+  max-width:1180px;margin:0 auto;padding:22px 32px 60px;border-top:1px solid var(--rule-strong);
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);
+  display:flex;flex-wrap:wrap;gap:8px 26px;
+}
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr;gap:0;padding-bottom:50px}
+  .sidebar{order:2;padding-top:40px}
+  .main{order:1}
+  .stamp{right:20px;top:26px}
+  h1{max-width:none}
+  .brief,.rules,.paths,.examples,.defects{grid-template-columns:1fr}
+  .brief > div{border-right:0;border-bottom:1px solid var(--rule)}
+  .brief > div:last-child{border-bottom:0}
+  .trace{grid-template-columns:1fr}
+  .masthead{padding:44px 20px 24px}
+  .layout,.footer{padding-left:20px;padding-right:20px}
+}
+@media (max-width:700px){
+  .matrix-wrap{overflow-x:visible}
+  table.matrix{display:block;min-width:0;width:100%}
+  table.matrix thead{display:none}
+  table.matrix tbody{display:block}
+  table.matrix tr{display:block;border-bottom:1px solid var(--rule);padding:10px 0}
+  table.matrix td{display:block;border-bottom:0;padding:3px 0;font-size:.88rem}
+  table.matrix td:first-child{font-weight:700;font-size:.95rem;padding:0 0 7px;border-bottom:1px dotted var(--rule);margin-bottom:4px}
+  table.matrix td:not(:first-child)::before{
+    display:block;font-family:var(--mono);font-size:10px;color:var(--muted);
+    letter-spacing:.03em;margin-bottom:1px;
+  }
+  table.matrix.compact td:nth-child(2)::before{content:"顶层 run_code"}
+  table.matrix.compact td:nth-child(3)::before{content:"为什么"}
+  table.matrix:not(.compact) td:nth-child(2)::before{content:"顶层 run_code"}
+  table.matrix:not(.compact) td:nth-child(3)::before{content:"结果"}
+  table.matrix:not(.compact) td:nth-child(4)::before{content:"子调用"}
+}
+@media (max-width:600px){
+  .stamp{display:none}
+}
+@media print{
+  body{background:#fff}
+  body::before{display:none}
+  .stamp{display:none}
+  .sidebar{position:static}
+  .code-panel{box-shadow:none}
+}
+@media (prefers-reduced-motion:no-preference){
+  .masthead,.section{animation:rise .5s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="stamp">草案 / DRAFT</div>
+  <p class="kicker">dsh-user-approval / 一次真实案例</p>
+  <h1>只放行<br>工具调用。</h1>
+  <p class="lede">
+    模型用 <code>run_code</code> 里的 <code>fs.rmSync</code> 删目录。旧流程只看见一个工具调用，
+    <code>run_code</code> 在 <code>autoAllowTools</code> 里，删除静默发生。
+    新流程不再一律 ask，也不猜危险 API：
+    <strong>顶层只放行“只有工具调用”的代码；出现其它 JS，就 ask。</strong>
+  </p>
+  <dl class="brief">
+    <div><dt>谁</dt><dd>一次 PTC 会话</dd></div>
+    <div><dt>想做什么</dt><dd>删掉工作区里的 <code>./dist</code></dd></div>
+    <div><dt>发生了什么</dt><dd>代码里的 <code>fs.rmSync</code> 绕过闸门，静默删除</dd></div>
+    <div><dt>新流程</dt><dd>只有 <code>tools.*</code> 调用放行；其它 JS ask</dd></div>
+  </dl>
+  <div class="meta">
+    <span>案例：真实会话，路径和 id 隐去</span>
+    <span>设计：2026-11-07</span>
+    <span>状态：草案，未实现</span>
+  </div>
+</header>
+
+<main class="layout">
+
+  <div class="main">
+
+    <section class="section" id="case">
+      <h2>案例：一次没有弹窗的删除</h2>
+      <p class="sub">
+        前四拍是 v0.12.0 的现状；后两拍讲新流程；最后一拍讲边界。
+        案例按 request 模式复述；request 是常用模式里最严格的一个。
+        PTC 运行时、沙箱、审批记录这些名字，先按字面理解，右侧有术语表。
+      </p>
+
+      <div class="timeline">
+
+        <article class="beat">
+          <h3>模型没有用 bash，它写了一段代码<span class="stage">现状</span></h3>
+          <p>
+            任务是清理构建目录。PTC preset 下，模型只能直接调用 <code>run_code</code>。
+            它要删文件，最直接的办法不是 <code>tools.bash</code>，而是 <code>import node:fs</code>。
+          </p>
+          <pre class="snippet"><span class="c">// arguments.code</span>
+<span class="k">import</span> { rmSync } <span class="k">from</span> <span class="s">'node:fs'</span>
+
+rmSync(<span class="s">'./dist'</span>, { recursive: <span class="k">true</span>, force: <span class="k">true</span> })</pre>
+          <dl class="trace">
+            <div><dt>谁</dt><dd><strong>模型</strong>写代码</dd></div>
+            <div><dt>留下什么</dt><dd>一个 <code>run_code</code> 调用，<code>parent</code> 为空</dd></div>
+            <div><dt>谁看得见</dt><dd>闸门看到工具名和参数，看不到代码内部</dd></div>
+          </dl>
+        </article>
+
+        <article class="beat">
+          <h3>闸门只看见一个工具调用<span class="stage">现状</span></h3>
+          <p>
+            闸门跑在 <code>tools/pre-execute</code>。它先查 <code>autoAllowTools</code>；
+            <code>run_code</code> 在里面，于是 <code>allow</code>。
+            它没有读 <code>code</code>，也没有弹窗。
+          </p>
+          <dl class="trace">
+            <div><dt>谁</dt><dd><strong>闸门</strong>放行</dd></div>
+            <div><dt>留下什么</dt><dd>没有弹窗，没有审批记录</dd></div>
+            <div><dt>谁看得见</dt><dd>用户不知道这次删除被放行</dd></div>
+          </dl>
+          <p class="caption">缺口就在这一步：放行发生在看代码之前。web profile 的 <code>autoAllowTools</code> 默认包含 <code>run_code</code>。</p>
+        </article>
+
+        <article class="beat">
+          <h3>代码执行，删除发生<span class="stage">现状</span></h3>
+          <p>
+            PTC 运行时起一个 Node 子进程执行代码。文件沙箱是 <code>workspace-write</code>；
+            <code>./dist</code> 在工作区里，<code>rmSync</code> 成功。
+            事后只有一个工具结果，没有文件操作记录。
+          </p>
+          <dl class="trace">
+            <div><dt>谁</dt><dd><strong>PTC 运行时</strong>执行</dd></div>
+            <div><dt>留下什么</dt><dd>工具结果；没有文件操作记录</dd></div>
+            <div><dt>谁看得见</dt><dd>沙箱是唯一边界，删除已经发生</dd></div>
+          </dl>
+          <p class="caption">闸门不是没批准，是根本没看见。</p>
+        </article>
+
+        <article class="beat">
+          <h3>两条路，闸门只看见一条<span class="stage">现状</span></h3>
+          <p>
+            同样删 <code>./dist</code>，写成直接 <code>fs</code> 调用，和写成 <code>tools.bash</code> 子调用，命运不同。
+          </p>
+          <div class="paths">
+            <div class="path direct">
+              <h4>直接效果</h4>
+              <div class="plabel">一段顶层 run_code</div>
+              <pre class="snippet"><span class="k">import</span> { rmSync } <span class="k">from</span> <span class="s">'node:fs'</span>
+rmSync(<span class="s">'./dist'</span>, { recursive: <span class="k">true</span> })</pre>
+              <ul>
+                <li>闸门看到：<b>run_code</b>，<code>parent</code> 为空</li>
+                <li>旧结果：<b>allow</b>，靠 <code>autoAllowTools</code></li>
+                <li>记录：<b>没有弹窗</b></li>
+              </ul>
+            </div>
+            <div class="path sub">
+              <h4>子调用</h4>
+              <div class="plabel">同一段顶层代码里的 tools.bash</div>
+              <pre class="snippet"><span class="k">await</span> tools.bash({
+  command: <span class="s">'rm -rf ./dist'</span>
+})</pre>
+              <ul>
+                <li>闸门看到：顶层 <b>run_code</b>，然后是子调用 <b>bash</b></li>
+                <li>旧结果：顶层 allow；request 下 bash <b>弹窗</b></li>
+                <li>记录：<b>有一条审批记录</b></li>
+              </ul>
+            </div>
+          </div>
+          <p class="caption">旧流程只看见第二条。新流程下，第一条会被识别为“只有 JS”，ask；第二条是“只有工具调用”，交给子调用。</p>
+        </article>
+
+        <article class="beat">
+          <h3>新流程：先看代码结构<span class="stage new">新流程</span></h3>
+          <p>
+            顶层 <code>run_code</code> 不因为“它是顶层”就问。闸门读 <code>code</code>，看它是哪一类：
+            只有 <code>tools.*</code> 调用，就 <code>allow</code>，交给子调用；
+            出现其它 JS，就 <code>ask</code>。
+          </p>
+          <dl class="trace">
+            <div><dt>谁</dt><dd><strong>闸门</strong>分类</dd></div>
+            <div><dt>留下什么</dt><dd>顶层只有 JS 时留记录；纯工具调用交给子调用</dd></div>
+            <div><dt>谁看得见</dt><dd>用户只被顶层的 JS 代码打扰</dd></div>
+          </dl>
+          <p class="caption">
+            <code>await tools.read(...)</code> 放行；<code>fs.rmSync(...)</code> ask；
+            两者混在一起，也 ask。
+          </p>
+        </article>
+
+        <article class="beat">
+          <h3>同一段代码，换一个模式<span class="stage new">新流程</span></h3>
+          <p>模式不同，顶层的分类结果不同。子调用仍然各自裁决。</p>
+          <div class="matrix-wrap">
+            <table class="matrix compact">
+              <thead>
+                <tr><th>模式</th><th>顶层 run_code</th><th>为什么</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>request</td>
+                  <td><span class="badge allow">只有 tools.*</span> <span class="badge ask">其它 JS</span></td>
+                  <td>纯工具调用放行；出现 JS ask。</td>
+                </tr>
+                <tr>
+                  <td>auto-edit</td>
+                  <td><span class="badge allow">只有 tools.*</span> <span class="badge ask">其它 JS</span></td>
+                  <td>同上；编辑族子调用仍免检。</td>
+                </tr>
+                <tr>
+                  <td>smart</td>
+                  <td><span class="badge ask">可能 ASK</span> <span class="badge allow">可能 ALLOW</span></td>
+                  <td>走五步流水线；仍可能被绕过。</td>
+                </tr>
+                <tr>
+                  <td>yolo / off</td>
+                  <td><span class="badge allow">ALLOW</span></td>
+                  <td>不查。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="caption">
+            auto-edit 不是“自动编辑文件”。它只对 <code>tools.write</code>、<code>tools.edit</code> 这类编辑族子调用免检。
+          </p>
+        </article>
+
+        <article class="beat end">
+          <h3>代价和边界<span class="stage">边界</span></h3>
+          <p>
+            这个规则不猜危险 API，只看代码结构。
+            代价是：正常 JS 逻辑也会 ask；混合代码可能顶层 ask 后，子调用再 ask。
+            smart 仍依赖 LLM 和危险清单，可能被绕过。
+            真正的硬边界还是沙箱；要彻底不静默，宿主层得审批文件效果。
+          </p>
+          <dl class="trace">
+            <div><dt>代价</dt><dd>JS 逻辑会 ask；可能双弹</dd></div>
+            <div><dt>没解决</dt><dd>smart 仍可能漏</dd></div>
+            <div><dt>硬边界</dt><dd>沙箱，以及未来的宿主层审批</dd></div>
+          </dl>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="section" id="meaning">
+      <h2>这段案例说明了什么</h2>
+      <div class="rules">
+        <div class="rule">
+          <b>1. 顶层看代码，不看身份</b>
+          <span>顶层 <code>run_code</code> 不因为“它是顶层”就弹；先看代码结构。</span>
+        </div>
+        <div class="rule">
+          <b>2. 只有工具调用放行</b>
+          <span>只有 <code>tools.*</code> 调用（加接结果的变量和 return）才 allow。</span>
+        </div>
+        <div class="rule">
+          <b>3. 其它 JS 都 ask</b>
+          <span>出现运算、分支、循环、直接 API，或混合代码，就 ask。</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="pipeline">
+      <h2>新流程的完整判断</h2>
+      <p class="sub">
+        <code>run_code</code> 保留在 <code>autoAllowTools</code> 里。
+        分类插在“自动放行”返回之前，所以只影响顶层调用。
+      </p>
+      <div class="code-panel" role="img" aria-label="审批闸门伪代码">
+<span class="c">// tools/pre-execute</span>
+<span class="k">if</span> (exec.name === <span class="s">'run_code'</span> &amp;&amp; exec.parent === <span class="k">undefined</span>) {
+  <span class="c">// 顶层调用：看代码，不看身份</span>
+  <span class="k">if</span> (mode === <span class="s">'request'</span> || mode === <span class="s">'auto-edit'</span>) {
+    <span class="k">return</span> isToolCallsOnly(code)
+      ? allow()                    <span class="c">// 只有工具调用：交给子调用</span>
+      : ask(codeSummary(code))     <span class="c">// 其它 JS：ASK</span>
+  }
+
+  <span class="k">if</span> (mode === <span class="s">'smart'</span>) {
+    <span class="k">return</span> smartPipeline(code)  <span class="c">// 五步：危险清单 → 记忆 → LLM → 兜底</span>
+  }
+
+  <span class="k">return</span> allow()                <span class="c">// yolo / off：不查</span>
+}
+
+<span class="c">// 其它工具：现有工具族逻辑，不变</span>
+<span class="k">return</span> familyGate(exec)
+      </div>
+      <p class="caption">
+        <code>isToolCallsOnly</code> 是语法白名单，不是危险清单。不认识的写法默认 ask。
+      </p>
+    </section>
+
+    <section class="section" id="modes">
+      <h2>模式规则</h2>
+      <p class="sub">
+        request / auto-edit 的规则只有一条：顶层只放行“只有工具调用”的代码。
+        纯工具调用交给子调用；出现其它 JS，就 ask。
+      </p>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead>
+            <tr><th>模式</th><th>顶层 run_code</th><th>结果</th><th>子调用</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>request</td>
+              <td>只有 <code>tools.*</code> 调用 → 放行；其它 JS → ask</td>
+              <td>纯工具 <span class="badge allow">ALLOW</span><br>其它 <span class="badge ask">ASK</span></td>
+              <td>只读 allow；编辑 / shell / other ask</td>
+            </tr>
+            <tr>
+              <td>auto-edit</td>
+              <td>只有 <code>tools.*</code> 调用 → 放行；其它 JS → ask</td>
+              <td>纯工具 <span class="badge allow">ALLOW</span><br>其它 <span class="badge ask">ASK</span></td>
+              <td>编辑 allow；只读 allow；shell / other ask</td>
+            </tr>
+            <tr>
+              <td>smart</td>
+              <td>五步流水线：危险清单 → 只读 git 快路径 → 会话记忆 → LLM → 兜底</td>
+              <td>danger 或 LLM ask → <span class="badge ask">ASK</span><br>LLM approve → <span class="badge allow">ALLOW</span><br>无 LLM → <span class="badge ask">ASK</span></td>
+              <td>同现有 smart：shell 走五步；只读 allow；other ask</td>
+            </tr>
+            <tr>
+              <td>yolo</td>
+              <td>不查</td>
+              <td><span class="badge allow">ALLOW</span></td>
+              <td>allow</td>
+            </tr>
+            <tr>
+              <td>off</td>
+              <td>不查</td>
+              <td><span class="badge allow">ALLOW</span></td>
+              <td>闸门不拦截</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="caption">严格模式只问代码结构；子调用还是按族裁决。</p>
+    </section>
+
+    <section class="section" id="classes">
+      <h2>三类代码，一个兜底</h2>
+      <p class="sub">
+        闸门只看结构，不看危险 API。只有工具调用放行；出现其它 JS 就 ask。
+        变量和 <code>return</code> 只用来接结果，算工具调用的一部分。
+      </p>
+      <div class="examples">
+        <div class="example allow">
+          <h3>只有工具调用 → ALLOW</h3>
+          <pre class="snippet"><span class="k">await</span> tools.read({ file_path: <span class="s">'README.md'</span> })</pre>
+          <pre class="snippet"><span class="k">const</span> r = <span class="k">await</span> tools.read({ file_path: <span class="s">'README.md'</span> })
+<span class="k">return</span> r.lines.length</pre>
+          <p>只有工具调用，和接结果的变量 / return。子调用照旧裁决。</p>
+        </div>
+        <div class="example ask">
+          <h3>工具调用 + JS → ASK</h3>
+          <pre class="snippet"><span class="k">const</span> r = <span class="k">await</span> tools.read({ file_path: <span class="s">'README.md'</span> })
+<span class="k">if</span> (r.lines.length &gt; 100) {
+  <span class="k">await</span> tools.write({ file_path: <span class="s">'big.txt'</span>, content: <span class="s">'big'</span> })
+}</pre>
+          <p>出现 <code>if</code> 和比较运算，就不再是纯工具调用。</p>
+        </div>
+        <div class="example ask">
+          <h3>只有 JS → ASK</h3>
+          <pre class="snippet"><span class="k">import</span> { rmSync } <span class="k">from</span> <span class="s">'node:fs'</span>
+rmSync(<span class="s">'./dist'</span>, { recursive: <span class="k">true</span> })</pre>
+          <p>没有 <code>tools.*</code> 调用，全是 JS。</p>
+        </div>
+        <div class="example ask">
+          <h3>不在白名单 → ASK（兜底）</h3>
+          <pre class="snippet"><span class="k">const</span> f = globalThis[<span class="s">'fe'</span> + <span class="s">'tch'</span>]
+<span class="k">await</span> f(<span class="s">'https://example.com'</span>)</pre>
+          <p>看不懂的写法不猜，默认 ask；不默认 allow。</p>
+        </div>
+      </div>
+      <div class="callout">
+        <b>边界</b>
+        <code>const r = await tools.read(...)</code> 和 <code>return r.lines.length</code> 算“只有工具调用”；
+        一旦出现运算、分支、循环、字符串拼装、<code>import</code> / <code>require</code>、<code>process</code> / <code>globalThis</code>、
+        <code>eval</code> / <code>fetch</code>、直接 <code>fs</code>、动态成员（<code>obj[expr]</code>）、未知语法，就 ask。
+      </div>
+    </section>
+
+    <section class="section" id="smart">
+      <h2>smart 的五步</h2>
+      <p class="sub">smart 是唯一的“分类”路径。代码作为 <code>command</code> 送进去，可能 ask，也可能 allow。</p>
+      <ol class="steps">
+        <li><div><b>危险清单</b><span>目前是 shell 正则。<code>fs.rmSync</code> 不命中，继续下一步。</span><span class="miss">缺陷：漏 JS 危险写法</span></div></li>
+        <li><div><b>只读 git 快路径</b><span>对代码不匹配，继续。后续代码流程可以去掉这一步。</span></div></li>
+        <li><div><b>会话记忆</b><span>key 用代码文本。同一段代码批过，TTL 内直接 allow。</span></div></li>
+        <li><div><b>LLM 分类</b><span>把代码作为 <code>command</code> 送 LLM。approve → allow；ask → ask。</span><span class="miss">缺陷：默认提示词偏 shell；代码会发给外部 LLM</span></div></li>
+        <li><div><b>兜底</b><span>没有 LLM、超时、异常 → ask。</span></div></li>
+      </ol>
+      <p class="caption">smart 不是保证。动态写法、提示词偏置、模型判断都可能让它放行。</p>
+    </section>
+
+    <section class="section" id="defects">
+      <h2>已知代价</h2>
+      <div class="defects">
+        <div class="defect"><b>正常 JS 逻辑会 ask</b><p>只要出现运算、分支、循环，就不再是纯工具调用。严格模式会明显更吵。</p></div>
+        <div class="defect"><b>“只有工具调用”的边界要定</b><p>变量、return、取值算不算 JS，需要写死。边界越宽，白名单越难维护。</p></div>
+        <div class="defect"><b>可能双弹</b><p>混合代码顶层 ask 后，代码里的 <code>tools.write</code>、<code>tools.bash</code> 子调用还会各自 ask。</p></div>
+        <div class="defect"><b>smart 仍可能漏</b><p>危险清单是 shell 的；LLM 也可能被写法或提示词带偏。它不是硬边界。</p></div>
+        <div class="defect"><b>源码外发</b><p>smart 下代码会发给外部 LLM。这是接受的成本。</p></div>
+        <div class="defect"><b>代码摘要还没接</b><p>ask 时弹窗里暂时看不到代码。审批是盲的，属于后续工作。</p></div>
+        <div class="defect"><b>粒度是整段代码</b><p>批准的是整个顶层调用，不是单个文件操作。</p></div>
+        <div class="defect"><b>没有按文件批准</b><p>不能只批“删 ./dist”，不批同一段代码里的其它操作。</p></div>
+      </div>
+    </section>
+
+    <section class="section" id="later">
+      <h2>后续工作</h2>
+      <ol class="todo">
+        <li><div><b>实现语法白名单</b><p>解析 AST，只允许 <code>tools.*</code> 调用和接结果的节点；未知节点 ask。需要选 parser。</p></div></li>
+        <li><div><b>定死边界</b><p>变量、return、简单取值算工具调用；运算、分支、循环、字符串拼装算 JS。写进测试。</p></div></li>
+        <li><div><b>代码摘要进 ask reason</b><p>ask 时弹窗要能看到代码，不然审批是盲的。</p></div></li>
+        <li><div><b>双弹 UX</b><p>顶层 ask 后，子调用还要不要问？不能直接跳过，需要设计“已批准”提示或合并。</p></div></li>
+        <li><div><b>smart 的 JS 危险清单</b><p>覆盖写、删、起进程、联网，减少对 LLM 的依赖。</p></div></li>
+        <li><div><b>测试矩阵</b><p>三类代码 × 模式 × 子调用 × yolo/off。还要测混合和旁路写法。</p></div></li>
+        <li><div><b>宿主层根治</b><p>PTC 执行器做文件效果审批，或 PTC 会话用 <code>read-only</code> 沙箱 + 程序级提权。</p></div></li>
+        <li><div><b>文档</b><p>ADR 0004 修订，README / CONTEXT / CHANGELOG 同步。</p></div></li>
+      </ol>
+    </section>
+
+    <section class="section" id="rejected">
+      <h2>已否决 / 边界</h2>
+      <ul class="rejected">
+        <li><b>一律 ask</b>：纯工具调用也弹，太吵；顶层不应该因为“它是顶层”就弹。</li>
+        <li><b>危险清单决定放行</b>：可绕过；漏检会变成静默放行。</li>
+        <li><b>顶层无条件 allow</b>：fs.rmSync 这种只有 JS 的代码会静默执行。</li>
+        <li><b>拿掉 autoAllowTools</b>：yolo / off 也会弹，做不到按模式区分。</li>
+        <li><b>只靠 LLM 判断 request / auto-edit</b>：贵、慢、源码外发。</li>
+        <li><b>把白名单当硬边界</b>：不行。它只是静态分类。</li>
+      </ul>
+    </section>
+
+    <section class="section" id="touchpoints">
+      <h2>实现触点</h2>
+      <ul class="rejected" style="list-style:none">
+        <li><b>src/index.ts:461-468</b>：闸门入口。分类插在 <code>autoAllowTools</code> 返回之前。</li>
+        <li><b>src/index.ts:177-180</b>：<code>run_code</code> 仍留在 <code>autoAllowTools</code> 里。</li>
+        <li><b>新增分类器</b>：<code>isToolCallsOnly(code)</code>，解析 AST，白名单判定。</li>
+        <li><b>src/smart-classifier.ts</b>：smart 的代码输入、<code>commandFromArguments</code>（:162）、记忆 key（:303）。</li>
+        <li><b>测试</b>：<code>test/gate-ptc.test.ts</code>、<code>test/tool-family-defaults.test.ts</code>，补三类代码和双弹。</li>
+        <li><b>文档</b>：ADR 0004、README、CONTEXT、CHANGELOG。</li>
+      </ul>
+    </section>
+
+    <section class="section" id="questions">
+      <h2>待确认</h2>
+      <ul class="questions">
+        <li><code>const r = await tools.read(...)</code> 和 <code>return r.lines.length</code> 算“只有工具调用”，对吗？</li>
+        <li>纯运算（<code>1 + 1</code>）但没有直接效果，算 JS 要 ask 吗？目前算。</li>
+        <li>smart 是否也走这个三分类？目前不走，仍走五步。</li>
+        <li>混合代码顶层 ask 后，子调用再 ask，双弹接受吗？</li>
+        <li>语法白名单用哪个 parser？加依赖可以吗？</li>
+        <li>代码摘要多长？要不要显示整段代码？</li>
+        <li>JS 危险清单和独立代码流程，哪个先做？</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <aside class="sidebar">
+    <div class="side-block">
+      <h3>术语</h3>
+      <dl>
+        <dt>run_code</dt><dd>工具名。PTC preset 下模型唯一能直接调用的工具。</dd>
+        <dt>代码</dt><dd><code>run_code</code> 的 <code>arguments.code</code>，那段 JS。</dd>
+        <dt>顶层调用</dt><dd><code>parent === undefined</code> 的 <code>run_code</code> 调用。</dd>
+        <dt>子调用</dt><dd>代码里调 <code>tools.*</code> 产生的工具调用，带 <code>parent</code>。</dd>
+        <dt>闸门</dt><dd><code>tools/pre-execute</code> 上的审批检查。</dd>
+        <dt>只有工具调用</dt><dd>只有 <code>tools.*</code> 调用，加上接结果的变量和 return。</dd>
+        <dt>审批记录</dt><dd>闸门这次 allow 或 ask 留下的记录；弹窗算一条。</dd>
+        <dt>沙箱</dt><dd>宿主的文件边界。默认 <code>workspace-write</code>。</dd>
+        <dt>LLM</dt><dd>smart 的审批分类器，不是写代码的模型。</dd>
+      </dl>
+    </div>
+
+    <div class="side-block">
+      <h3>五条不变式</h3>
+      <ol>
+        <li>顶层看代码，不看身份。</li>
+        <li>只有工具调用放行。</li>
+        <li>其它 JS 一律 ask。</li>
+        <li>子调用按族裁决。</li>
+        <li>沙箱是硬边界。</li>
+      </ol>
+    </div>
+
+    <div class="side-block">
+      <h3>当前行为（v0.12.0）</h3>
+      <p><code>run_code</code> 在 <code>autoAllowTools</code> 里。顶层调用直接放行，没有任何代码检查。本页的案例前四拍就是现状。</p>
+    </div>
+
+    <div class="side-block">
+      <h3>变更记录</h3>
+      <ol>
+        <li>2026-11-07 初稿。按批注修正：顶层不无条件弹；auto-edit 只放行编辑族工具。</li>
+        <li>同日改为案例叙事：一段 <code>fs.rmSync</code> 代码，先讲它今天怎么穿过闸门，再讲新流程怎么拦。</li>
+        <li>同日定稿：不做危险检测，也不一律 ask；顶层只放行“只有工具调用”的代码，其它 JS ask。</li>
+      </ol>
+    </div>
+
+    <div class="side-block">
+      <h3>相关文件</h3>
+      <p><a href="../src/index.ts">src/index.ts</a><br>
+      <a href="../src/smart-classifier.ts">src/smart-classifier.ts</a><br>
+      <a href="adr/0004-run-code-is-a-transport.md">ADR 0004</a></p>
+    </div>
+  </aside>
+
+</main>
+
+<footer class="footer">
+  <span>设计草案 · 2026-11-07</span>
+  <span>dsh-user-approval</span>
+  <span>本页只描述设计，不改代码</span>
+</footer>
+
+</body>
+</html>
