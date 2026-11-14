@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-11-14
+
+### Changed
+
+- **The DSH dependency line is verified against `0.2.2-rc.3`.** The fifteen
+  `@deepseek-ai/dsh-*` **devDependencies** are pinned exactly to `0.2.2-rc.3`
+  (was `0.2.2-rc.1`) and `pnpm-lock.yaml` is regenerated; the
+  `@deepseek-ai/cordis` / `@deepseek-ai/schemastery` dev pins stay at the
+  host's `4.1.0` / `3.19.0`, which rc.3 ships unchanged. The fifteen **peer
+  ranges stay `^0.2.1-rc.2`**: the install floor does not move, and the
+  compatibility gate — unchanged byte-for-byte between the rc.1 and rc.3
+  source trees — admits every `0.2.x` host from `0.2.1-rc.2` onward, the
+  `0.2.2` prerelease line included. The gate was measured with the host's own
+  `evaluatePluginCompatibility`: the shipped peers pass at `0.2.2-rc.3`, and a
+  control manifest that pins only `@deepseek-ai/dsh-tools` to `0.2.2-rc.1` is
+  rejected at `0.2.2-rc.3` — the gate is not vacuous.
+
+- **No source change, and no `lib/` diff.** A rebuild against the rc.3 types
+  (`tsc && tsdown`) reproduces the committed bundle byte-for-byte, so the
+  artifact that already served `0.2.1-rc.5` / `0.2.2-rc.1` hosts serves this
+  release too. `pnpm typecheck` is clean and 137 tests pass against the rc.3
+  types; `pnpm install --frozen-lockfile` is up to date and the lockfile holds
+  no `0.2.2-rc.1` entry.
+
+- **The rc.3 contract surface was re-checked, and the plugin is outside every
+  breaking change.** The removed client exports (`useAnchoredPosition`,
+  `AnchoredPositionOptions`) are not imported here — both menus use the inline
+  `anchor` element — the `Menu` `portal` prop the composer chip already passes
+  is still supported, the new `slots` `hoc` kind is an addition, and the
+  deleted/renamed APIs the rc.3 guide lists (`spawn_teammate`, `agent_id`,
+  `listBundles`, `SandboxUnsupportedPolicyError`, `LlmErrorCode`, …) do not
+  appear in `src/`. rc.3's structured `ApprovalError` codes do not apply to
+  this plugin: it decides requests in `tools/pre-execute` and never inspects a
+  stored rejection result.
+
+- **Two known stale leftovers stay deferred.** `reme_search` is still listed in
+  the `readOnlyTools` defaults (the tool was retired with reMe; the name is
+  inert) and the old `@deepseek-ai/dsh-client-runtime` entry is still in the
+  `neverBundle` external lists (renamed upstream long ago, never imported).
+  The rc.3 guide lists both as optional cleanups; neither changes behaviour,
+  so neither was folded into this release. The measurements and the deferred
+  checklist are in
+  [`docs/2026-11-14-dsh-v0-2-2-rc-3-compatibility-audit.md`](docs/2026-11-14-dsh-v0-2-2-rc-3-compatibility-audit.md).
+
+### Documentation
+
+- Both READMEs gain the `0.13.0` compatibility entry and `CONTEXT.md` moves the
+  verified line to `0.2.2-rc.3`; the audit page records the install, gate
+  measurement, contract scan and the live-verification checklist deferred to
+  the host-upgrade round.
+
+- The pending `docs: add the run_code approval flow design page` commit, which
+  was waiting unpushed on `main`, joins this release.
+
 ## [0.12.0] - 2026-11-05
 
 ### Added

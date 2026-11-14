@@ -163,6 +163,38 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 
 ### DSH Version Compatibility
 
+**v0.13.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.3)**:
+
+The fifteen `@deepseek-ai/dsh-*` devDependencies are pinned exactly to
+`0.2.2-rc.3`; the `@deepseek-ai/cordis` and `@deepseek-ai/schemastery` dev pins
+stay at the host's `4.1.0` / `3.19.0`. The fifteen **peer ranges stay
+`^0.2.1-rc.2`** (and the `cordis` / `schemastery` peers stay `>=4.0.5` /
+`>=3.18.5`), so the install floor does not move: every `0.2.x` host from
+`0.2.1-rc.2` onward accepts this release — the whole `0.2.2` prerelease line
+included — while `0.2.1-rc.1` and every `0.2.0-rc.*` host do not. Three things
+are worth knowing:
+
+- **Nothing in `src/` changed, and the bundle is unchanged.** A rebuild against
+  the rc.3 types reproduces `lib/` byte-for-byte, so the same artifact runs on
+  `0.2.1-rc.5`, `0.2.2-rc.1` and `0.2.2-rc.3` hosts.
+- **The gate was measured, not derived.** With the shipped peers it passes at
+  runtime `0.2.2-rc.3` (as well as `0.2.2-rc.1` and `0.2.1-rc.5`); a control
+  manifest that pins only `@deepseek-ai/dsh-tools` to `0.2.2-rc.1` is rejected
+  at `0.2.2-rc.3`, so the gate is not vacuous. The gate implementation is
+  byte-identical to the rc.1 tree's.
+- **Installing on a `0.2.2-rc.3` host can print unmet-peer warnings.** npm and
+  pnpm apply the default prerelease rules, which do not admit a `0.2.2`
+  prerelease from a `^0.2.1-rc.2` range. The judge is the host's compatibility
+  gate, which evaluates with `includePrerelease: true` and passes — the
+  warnings are expected, not a rejection.
+
+0.13.0 is verified statically (`pnpm typecheck`, 137 tests, `pnpm build`, and
+the gate computed with the host's own `evaluatePluginCompatibility`) against
+the real `0.2.2-rc.3` types. Live verification (install gate, cold start, Web
+UI) is **deferred to the host-upgrade round** — the local host still runs
+`0.2.2-rc.1`; the checklist is in
+[`docs/2026-11-14-dsh-v0-2-2-rc-3-compatibility-audit.md`](docs/2026-11-14-dsh-v0-2-2-rc-3-compatibility-audit.md).
+
 **v0.11.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.1)**:
 
 The fifteen `@deepseek-ai/dsh-*` devDependencies are pinned exactly to
