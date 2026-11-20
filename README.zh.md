@@ -418,12 +418,15 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 - `default`: `off`（默认禁用插件）
 - `editTools`: `['write', 'edit', 'str_replace_editor', 'update_goal']`
 - `shellTools`: `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']`
-- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']`
-- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']`
+- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']`
+- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route']`
 - `unclassified`: `ask`
 
-默认值里带上较新的 Agent Teams / ReMe 工具名是安全的：host 没注册的工具名
-永远不会被匹配到。这四份名单由 `test/tool-family-defaults.test.ts` 钉住。
+默认值里带上较新的 Agent Teams / dsh-mnemon 工具名是安全的：host 没注册的
+工具名永远不会被匹配到。这四份名单由 `test/tool-family-defaults.test.ts` 钉住。
+
+已兼容 `dsh-mnemon`：其全部 17 个 `mnemon_*` 工具默认免审，启用记忆插件的
+会话不会再为它们弹审批。
 
 ### 自定义配置
 
@@ -440,8 +443,8 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
         # 自定义工具分类（下面列的就是出厂默认值）
         editTools: ['write', 'edit', 'str_replace_editor', 'update_goal']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
-        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']
-        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']
+        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']
+        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route']
         
         # 未分类工具的策略：'ask'（更安全）或 'allow'（更快）
         unclassified: ask
@@ -470,8 +473,8 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `default` | string | `off` | 新会话的默认审批模式。选项：`request`、`auto-edit`、`smart`、`yolo`、`off` |
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor', 'update_goal']` | 分类为"编辑"族的工具（文件修改） |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | 分类为"Shell"族的工具（命令执行） |
-| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | 分类为"只读"族的工具（始终允许） |
-| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']` | 始终绕过审批的工具。`run_code` 在此是因为 PTC preset 下它是传输层，程序内子调用仍逐个过闸；删掉它则改为拦程序本体 |
+| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']` | 分类为"只读"族的工具（始终允许）。`working_directory` 归只读族：沙箱权限根不变，只有相对路径解析跟随新目录 |
+| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', + 17 个 `mnemon_*` 名]` | 始终绕过审批的工具。`run_code` 在此是因为 PTC preset 下它是传输层，程序内子调用仍逐个过闸；删掉它则改为拦程序本体。dsh-mnemon 的 17 个 `mnemon_*` 工具也默认在此——开箱已兼容 dsh-mnemon；删掉这些名字可改为弹窗 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
 | `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的只读命令链而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
@@ -496,7 +499,7 @@ approval needed for {tool} under {mode} mode ({family}); read-only browsing shou
 |------|---------|------|
 | **编辑** | `write`, `edit`, `str_replace_editor`, `update_goal` | 文件修改工具 |
 | **Shell** | `bash`, `pwsh`, `tool:bash`, `tool:pwsh` | 命令执行工具 |
-| **只读** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents`, `job_list`, `get_goal` | 安全浏览工具（始终允许） |
+| **只读** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `list_subagent_models`, `schedule_list`, `schedule_view`, `working_directory`, `list_agents`, `job_list`, `get_goal` | 安全浏览工具（始终允许） |
 | **其他** | *所有其他工具* | 未分类工具，行为取决于 `unclassified` 配置 |
 
 `run_code` 是 PTC preset 的传输层，刻意不放进任何族：它默认在 `autoAllowTools`

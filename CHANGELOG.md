@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The default tool-family lists are re-audited against the live `0.2.2-rc.3`
+  host surface and adjusted.** Every unclassified tool in a shipped Web
+  composition was traced to its origin package before classification: the
+  twelve official DSH gaps plus the seventeen `mnemon_*` tools of the
+  third-party `dsh-mnemon` plugin.
+
+- **`readOnlyTools` drops the retired `reme_search`** (reMe is offline; the name
+  has zero hits in the rc.3 host tree and had been inert for several releases)
+  **and gains `list_subagent_models`, `schedule_list`, `schedule_view`, and
+  `working_directory`** — official read-only discovery/state tools that
+  previously fell to `unclassified: ask` and prompted on every call.
+  `working_directory` ships read-only as a deliberate call: the sandbox
+  permission roots stay fixed, only relative-path resolution follows the new
+  directory. `list_directory` stays.
+
+- **`autoAllowTools` gains `subagent_fork`, `job_kill`, `team_task_create`, and
+  `team_task_get`.** `subagent_fork` is the same-package sibling of the already
+  exempt `subagent` delegation tool; `job_kill` joins its exempt
+  `job_output` / `job_list` family; the two team-board additions complete the
+  four-tool `team_task_*` set whose other half already shipped here.
+
+- **Already compatible with `dsh-mnemon`:** all seventeen `mnemon_*` tools ship
+  in `autoAllowTools`, so memory-enabled sessions never prompt for them. Hosts
+  without the plugin are unaffected — a list entry for an unregistered tool
+  name never matches. Delete the `mnemon_*` names from the settings page or
+  the cordis base to gate them instead.
+
+- Deliberately left under `unclassified: ask`: `web_fetch` (external network
+  reach), `create_goal` (the host already requires direct-human root
+  authority), `schedule_create` / `schedule_edit` (persistent recurring
+  prompts), `workflow` (multi-agent orchestration), and `plugin_manager`
+  (profile-wide changes).
+
+### Tests
+
+- `test/tool-family-defaults.test.ts` pins every new name, adds a dedicated
+  guard that `reme_search` cannot silently return to any list, and adds a
+  test that all seventeen mnemon tools ship auto-allowed and disjoint from the
+  three family lists. `test/tool-list.test.ts` drops the dead name from its
+  round-trip sample.
+
+### Documentation
+
+- Both READMEs, `CONTEXT.md`, the settings-page FALLBACK mirror
+  (`src/client/ApprovalModeSettings.tsx`), the schema descriptions, and the
+  verbatim `cordis.patch.yml` bundle patch carry the new defaults; the READMEs
+  and the settings-page descriptions state the dsh-mnemon compatibility
+  sentence. `lib/` is rebuilt.
+
 ## [0.13.0] - 2026-11-14
 
 ### Changed

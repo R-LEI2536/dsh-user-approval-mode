@@ -628,13 +628,16 @@ and a manual insert behave identically:
 - `default`: `off` (plugin disabled by default)
 - `editTools`: `['write', 'edit', 'str_replace_editor', 'update_goal']`
 - `shellTools`: `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']`
-- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']`
-- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']`
+- `readOnlyTools`: `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']`
+- `autoAllowTools`: `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route']`
 - `unclassified`: `ask`
 
 A tool name no host registers is simply never matched, so carrying the newer
-Agent Teams / ReMe names in the defaults is safe on older hosts. The four lists
-are pinned by `test/tool-family-defaults.test.ts`.
+Agent Teams / dsh-mnemon names in the defaults is safe on older hosts. The four
+lists are pinned by `test/tool-family-defaults.test.ts`.
+
+Already compatible with the `dsh-mnemon` memory plugin: all 17 `mnemon_*` tools
+ship auto-allowed, so memory-enabled sessions never prompt for them.
 
 ### Custom Configuration
 
@@ -651,8 +654,8 @@ You can customize the plugin behavior in your agent preset:
         # Custom tool classifications (these are the shipped defaults)
         editTools: ['write', 'edit', 'str_replace_editor', 'update_goal']
         shellTools: ['bash', 'pwsh', 'tool:bash', 'tool:pwsh']
-        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']
-        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']
+        readOnlyTools: ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']
+        autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route']
         
         # Strategy for unclassified tools: 'ask' (safer) or 'allow' (faster)
         unclassified: ask
@@ -681,8 +684,8 @@ You can customize the plugin behavior in your agent preset:
 | `default` | string | `off` | Default approval mode for new sessions. Options: `request`, `auto-edit`, `smart`, `yolo`, `off` |
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor', 'update_goal']` | Tools classified as "edit" family (file modifications) |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | Tools classified as "shell" family (command execution) |
-| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'reme_search', 'list_agents', 'job_list', 'get_goal']` | Tools classified as "readonly" family (always allowed) |
-| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list', 'run_code']` | Tools that always bypass approval. `run_code` ships here because it is the PTC preset's transport: the program's sub-calls still pass the gate. Remove it to gate the transport itself |
+| `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']` | Tools classified as "readonly" family (always allowed). `working_directory` ships read-only: sandbox permission roots stay fixed, only relative-path resolution follows the new directory |
+| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', + 17 `mnemon_*` names]` | Tools that always bypass approval. `run_code` ships here because it is the PTC preset's transport: the program's sub-calls still pass the gate. Remove it to gate the transport itself. All 17 `mnemon_*` tools (dsh-mnemon) also ship here — compatible with dsh-mnemon out of the box; delete the mnemon_* names to gate them |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
 | `readOnlyGitCommands` | boolean | `true` | Allow a strictly-parsed read-only command chain instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
@@ -708,7 +711,7 @@ The plugin automatically classifies tools into four families:
 |--------|--------------|----------|
 | **Edit** | `write`, `edit`, `str_replace_editor`, `update_goal` | File modification tools |
 | **Shell** | `bash`, `pwsh`, `tool:bash`, `tool:pwsh` | Command execution tools |
-| **Read-Only** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `reme_search`, `list_agents`, `job_list`, `get_goal` | Safe browsing tools (always allowed) |
+| **Read-Only** | `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `list_subagent_models`, `schedule_list`, `schedule_view`, `working_directory`, `list_agents`, `job_list`, `get_goal` | Safe browsing tools (always allowed) |
 | **Other** | *all other tools* | Unclassified tools, behavior depends on `unclassified` config |
 
 `run_code` is the PTC preset's transport and is deliberately kept out of every

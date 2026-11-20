@@ -41,7 +41,7 @@ test('formatToolList: comma-and-space join; an empty list renders as empty text'
 test('round trip: parseToolList(formatToolList(list)) is the identity', () => {
   const list = [
     'read', 'glob', 'grep', 'read_image', 'list_directory',
-    'todo_write', 'reme_search', 'list_agents',
+    'todo_write', 'schedule_list', 'list_agents',
   ]
   assert.deepEqual(parseToolList(formatToolList(list)), list)
   assert.deepEqual(parseToolList(formatToolList([])), [])

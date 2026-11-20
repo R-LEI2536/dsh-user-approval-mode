@@ -56,9 +56,9 @@ export interface Config {
     editTools?: string[];
     /** shell 族工具名（默认 bash/pwsh 及原始变体）。 */
     shellTools?: string[];
-    /** 只读工具名（默认 read/glob/grep/read_image/list_directory/todo_write + reme_search/list_agents/job_list/get_goal）；任何模式下免审。 */
+    /** 只读工具名（默认 read/glob/grep/read_image/list_directory/todo_write + list_subagent_models/schedule_list/schedule_view/working_directory/list_agents/job_list/get_goal）；任何模式下免审。 */
     readOnlyTools?: string[];
-    /** 永远免审的控制/编排工具（默认 ask_user_question/exit_plan_mode + job_output/skill/subagent/present/wait_agent/send_message/team_task_update/team_task_list）。 */
+    /** 永远免审的控制/编排工具（默认 ask_user_question/exit_plan_mode + job_output/skill/subagent/subagent_fork/present/wait_agent/send_message/job_kill + team_task 四件套 + run_code + dsh-mnemon 的 17 个 mnemon_* 工具）。 */
     autoAllowTools?: string[];
     /** 未分类工具的策略：`ask`（默认，fail-safe）或 `allow`。 */
     unclassified?: 'ask' | 'allow';

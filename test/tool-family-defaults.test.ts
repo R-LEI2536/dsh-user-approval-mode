@@ -52,11 +52,43 @@ test('defaults: common DSH tools ship as defaults (not left to each deployment)'
   for (const name of ['update_goal']) {
     assert.ok(defaultList('editTools').includes(name), `editTools must default to include ${name}`)
   }
-  for (const name of ['reme_search', 'list_agents', 'job_list', 'get_goal']) {
+  for (const name of ['list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']) {
     assert.ok(defaultList('readOnlyTools').includes(name), `readOnlyTools must default to include ${name}`)
   }
-  for (const name of ['job_output', 'skill', 'subagent', 'present', 'wait_agent', 'send_message', 'team_task_update', 'team_task_list']) {
+  for (const name of ['job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_update', 'team_task_list']) {
     assert.ok(defaultList('autoAllowTools').includes(name), `autoAllowTools must default to include ${name}`)
+  }
+})
+
+test('defaults: the retired reMe tool no longer ships in any list', () => {
+  // reMe is offline (the name has 0 hits in the 0.2.2-rc.3 host tree) and was
+  // an inert entry for several releases. The removal is deliberate — pin it so
+  // the name cannot silently return.
+  for (const field of ['editTools', 'shellTools', 'readOnlyTools', 'autoAllowTools'] as const) {
+    assert.ok(!defaultList(field).includes('reme_search'), `reme_search must not ship in ${field}`)
+  }
+})
+
+test('defaults: all 17 dsh-mnemon tools ship auto-allowed', () => {
+  // dsh-mnemon (a dshmarket plugin, not an official @deepseek-ai package) is a
+  // deliberate compatibility default: memory-enabled sessions never prompt for
+  // their tools. Hosts without the plugin are unaffected — a list entry for an
+  // unregistered tool name is inert.
+  const MNEMON_TOOLS = [
+    'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search',
+    'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create',
+    'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall',
+    'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status',
+    'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route',
+  ]
+  assert.equal(MNEMON_TOOLS.length, 17)
+  const list = defaultList('autoAllowTools')
+  for (const name of MNEMON_TOOLS) {
+    assert.ok(list.includes(name), `autoAllowTools must default to include ${name}`)
+  }
+  for (const family of ['editTools', 'shellTools', 'readOnlyTools'] as const) {
+    const overlap = defaultList(family).filter(name => name.startsWith('mnemon_'))
+    assert.deepEqual(overlap, [], `mnemon_* tools must not appear in ${family}`)
   }
 })
 
