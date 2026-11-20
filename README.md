@@ -163,6 +163,17 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 
 ### DSH Version Compatibility
 
+**v0.14.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.3)**:
+
+Same dependency line as 0.13.0 — the peer floor, dev pins and the measured
+compatibility gate are unchanged, so the 0.13.0 entry below (including the
+expected unmet-peer warnings on a `0.2.2` prerelease host) still describes
+this release's install surface. What moves in 0.14.0 is the default
+tool-family data: the shipped lists are re-audited against the live
+`0.2.2-rc.3` host surface (see the CHANGELOG). Verified statically
+(`pnpm typecheck`, 139 tests, `pnpm build`) against the real `0.2.2-rc.3`
+types.
+
 **v0.13.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.3)**:
 
 The fifteen `@deepseek-ai/dsh-*` devDependencies are pinned exactly to
