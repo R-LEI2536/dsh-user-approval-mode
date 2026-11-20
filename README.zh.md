@@ -204,6 +204,15 @@ Web UI 状态独立管理，刷新时从服务器同步：
 
 ### DSH 版本兼容性
 
+**v0.15.0+ 要求 DSH ≥ 0.2.1-rc.2（按 0.2.2-rc.3 验证）**：
+
+依赖线与 0.14.0 完全相同——peer 下限、dev 钉与实算的兼容门都没动，下方
+条目仍描述安装面。0.15.0 变的是审批弹窗文案：默认模板重构为
+`[{family}] Tool: {tool} | Mode: {mode}`，并经宿主 `displayReason` 通道自带
+双语（zh UI 显示内置中文版）——该通道自 peer 下限 0.2.1-rc.2 起所有宿主都
+支持。按静态验证交付（`pnpm typecheck`、141 个测试、`pnpm build`），面对
+真实的 `0.2.2-rc.3` 类型。
+
 **v0.14.0+ 要求 DSH ≥ 0.2.1-rc.2（按 0.2.2-rc.3 验证）**：
 
 依赖线与 0.13.0 完全相同——peer 下限、dev 钉与实算的兼容门都没动,下方
@@ -314,33 +323,42 @@ agent preset 选 `ptc` 时，模型只能直接调用 `run_code`，其它原生�
 
 ## 自定义审批弹窗文案
 
-工具需要审批时弹窗里显示的文本来自 `askReason` 模板。可在 `cordis.yml` 中
-覆盖为中文或自定义内容 —— 比如换措辞、补上你想给用户的提示语：
+工具需要审批时弹窗里显示的文本来自 `askReason` 模板。默认文案短而结构化 ——
+弹窗卡片自带「等待审批」状态条和允许 / 拒绝按钮，标题只需回答「谁、为何
+触发弹窗」：
+
+```
+[{family}] Tool: {tool} | Mode: {mode}
+```
+
+默认模板**自带双语**：中文 UI 经宿主 `displayReason` 通道显示
+`[{family}] 工具: {tool} | 模式: {mode}`（DSH 0.2.1-rc.2 起支持，即本插件
+peer 下限；更旧宿主忽略该字段、退回英文），会话日志仍记英文。需要完全自定义
+措辞时在 `cordis.yml` 里覆盖 —— 自定义模板单语原样显示（不附带中文变体）：
 
 ```yaml
 - insert:
     - id: dsh-user-approval-mode
       name: dsh-user-approval-mode
       config:
-        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_directory 而非 shell'
+        askReason: '⚠️ 工具 {tool} 需要您的批准（当前模式：{mode} | 工具类型：{family}）'
 ```
 
 可用占位符：`{tool}`（工具名）、`{mode}`（当前审批模式）、
 `{family}`（edit | shell | readonly | other）。
 
 PTC 程序内的工具子调用会在模板渲染结果之后追加 `[args: …]`（命令或路径摘要，
-单行、截断 200 字符），因为宿主弹窗无法显示嵌套调用的参数。这段后缀不可配置，
-也没有占位符控制它；原生调用不会附加。
+单行、截断 200 字符），因为宿主弹窗无法显示嵌套调用的参数。这段后缀对两种
+语言版本同样生效、不可配置、也没有占位符控制它；原生调用不会附加。
 
-**为什么这是手动配置**：这段文本在服务端生成并传给上游 DSH 的审批弹窗，
-插件在那一步没有任何 locale 信号（语言设置住在客户端）。最简单也最可预测
-的做法是：需要非英文文案的部署方直接在配置里写。输入框下方那个模式选择
-芯片通过 DSH 的 locale 服务独立本地化（见 `src/client/locales.ts`），所以
-芯片的标签已经会跟着 UI 切换走 —— `askReason` 是唯一需要手动跟语言对齐的
-部分。
+**自定义文本仍是手动的事**：默认模板的中文版是内置的，但自定义 `askReason`
+只是一个纯字符串 —— 服务端在弹窗那一刻没有 locale 信号（语言设置住在
+客户端），需要非英文自定义文案的部署方直接在配置里写。输入框下方那个模式
+选择芯片通过 DSH 的 locale 服务独立本地化（见 `src/client/locales.ts`）。
 
 **`askReason` 内的内联颜色或标记无效**：上游审批弹窗把 reason 当作纯字符串
-渲染，没有标记通道 —— 模板里给某段文字加颜色或样式不会生效。
+渲染，没有标记通道 —— 模板里给某段文字加颜色或样式不会生效。换行也不会
+渲染成多行：弹窗标题会把 `\n` 折叠成空格，模板保持单行。
 
 ## 设置页面
 
@@ -354,7 +372,7 @@ PTC 程序内的工具子调用会在模板渲染结果之后追加 `[args: …]
 2. **Sandbox 策略** —— 每个模式（`request`、`auto-edit`、`yolo`）一个
    下拉框。下拉标签在 `en` 与 `zh` 两种 locale 下都显示英文（值是与
    schema 共用的技术标识符）。
-3. **审批弹窗** —— `askReason` 多行文本模板
+3. **审批弹窗** —— `askReason` 单行文本模板
 
 其余 Config 字段（`default`、`unclassified` 以及六个 `smart*` 部署方旋钮）
 刻意保持为**仅部署方可配**：写在部署方的 cordis 配置里、不出现在设置页面。
@@ -464,8 +482,8 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
           auto-edit: workspace-write
           yolo: workspace-write
         
-        # 自定义审批原因消息
-        askReason: 'approval needed for {tool} under {mode} mode ({family})'
+        # 自定义审批原因消息（默认模板自带中文展示版）
+        askReason: '[{family}] Tool: {tool} | Mode: {mode}'
 ```
 
 ### 禁用插件
@@ -487,7 +505,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
 | `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的只读命令链而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
-| `askReason` | string | *见默认值* | 审批请求的自定义消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符 |
+| `askReason` | string | `[{family}] Tool: {tool} \| Mode: {mode}` | 审批请求的消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符。默认自带双语（zh UI 显示内置中文版，日志记英文）；自定义模板单语原样显示 |
 | `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
 | `smartModel` | string \| null | `null` | smart 模式分类器的 LLM model（null = 继承 `agentDefaultModel`） |
 
@@ -497,8 +515,11 @@ patch 逐字重复同一份名单——装 bundle 与手动 insert 的行为一�
 ### 默认审批原因
 
 ```
-approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell
+[{family}] Tool: {tool} | Mode: {mode}
 ```
+
+中文 UI 显示内置中文版 `[{family}] 工具: {tool} | 模式: {mode}`（宿主
+`displayReason` 通道）；会话日志仍记英文。
 
 ## 工具族分类
 

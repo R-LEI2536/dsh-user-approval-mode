@@ -89,7 +89,7 @@ The policy for tools in no family. Either `'ask'` (fail-safe) or `'allow'` (perm
 Map from each approval mode to the sandbox policy the plugin writes when switching into that mode. Four modes × three sandbox levels (`read-only` / `workspace-write` / `danger-full-access`).
 
 **askReason**:
-Template string for the approval dialog reason text. Supports `{tool}` / `{mode}` / `{family}` placeholders. Server-side generation — the plugin has no locale signal at render time, which is why the template is configurable rather than auto-localized.
+Template string for the approval dialog reason text. Supports `{tool}` / `{mode}` / `{family}` placeholders. The default (`[{family}] Tool: {tool} | Mode: {mode}`, see `DEFAULT_ASK_REASON` in `src/index.ts`) ships bilingual: the zh variant rides the host `displayReason` channel (supported since DSH 0.2.1-rc.2, this plugin's peer floor) while the session log keeps the English reason. A custom template is a single plain string — the server has no locale signal at render time, so custom non-English copy is set manually.
 
 **Default mode** (deployer-only):
 The approval mode assigned to a new session when no override exists. Configured in `cordis.yml` entry config (field `default`); not exposed in the user settings page.

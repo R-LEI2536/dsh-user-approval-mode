@@ -89,6 +89,31 @@ export const APPROVAL_MODES: readonly ApprovalMode[] = ['request', 'auto-edit', 
 /** 工具族分类：编辑、shell、只读、未分类。 */
 type ToolFamily = 'edit' | 'shell' | 'readonly' | 'other'
 
+/**
+ * 默认审批文案（en）。弹窗卡片自身已带「等待审批」状态条与允许/拒绝按钮，
+ * 标题只需回答「谁、为何触发弹窗」：工具名、工具族、当前模式。短格式也把
+ * smart/PTC 追加后缀（`[smart: …]` / `[args: …]`）对标题区的挤压降到最低。
+ */
+export const DEFAULT_ASK_REASON = '[{family}] Tool: {tool} | Mode: {mode}'
+
+/**
+ * 默认审批文案的 zh 展示版。经宿主 `displayReason` 通道按 UI 语言选用
+ * （0.2.1-rc.2 起支持，即本插件 peerDependencies 下限），会话日志仍记英文
+ * `reason`。自定义 `askReason` 不走此通道，单语原样展示。
+ */
+export const DEFAULT_ASK_REASON_ZH = '[{family}] 工具: {tool} | 模式: {mode}'
+
+/**
+ * 填充审批文案模板的 `{tool}` / `{mode}` / `{family}` 占位符。
+ * `replaceAll`：模板中重复出现的占位符保持一致。
+ */
+export function fillAskTemplate(template: string, tool: string, mode: string, family: string): string {
+  return template
+    .replaceAll('{tool}', tool)
+    .replaceAll('{mode}', mode)
+    .replaceAll('{family}', family)
+}
+
 // 使用 WeakMap 存储会话审批模式（内存方案）
 // DSH 重启后审批模式会恢复为默认值，但会话可以正常加载
 const sessionModes = new WeakMap<Session, ApprovalMode>()
@@ -113,7 +138,7 @@ export interface Config {
   readOnlyGitCommands?: boolean
   /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
   sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>
-  /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。 */
+  /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。缺省走内置双语模板：zh UI 显示中文版，日志记英文。 */
   askReason?: string
   /** Smart 分类器使用的 LLM provider。null = 继承 host 默认。 */
   smartProvider?: string | null
@@ -194,8 +219,8 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .description('Sandbox policy the plugin writes when switching into each mode. The "off" mode restores the composition default instead.')
     .volatile(),
   askReason: Schema.string()
-    .default('approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell')
-    .description('Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other).')
+    .default(DEFAULT_ASK_REASON)
+    .description('Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other). The default ships bilingual: a zh UI shows the zh variant through the host displayReason channel while the session log keeps the English reason; a custom template always displays verbatim (single language). For a PTC program\'s inner tool calls the plugin appends a short argument summary, because the host dialog cannot show those arguments.')
     .volatile(),
   smartProvider: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null)
     .description('LLM provider route for the smart-mode shell classifier. Null inherits the host default-model selection.')
@@ -369,6 +394,32 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     return false // off / yolo：全放行
   }
 
+  // 组装 ask 决定。默认模板双语：en 版进日志与英文 UI，zh 版只作弹窗展示
+  // （宿主 displayReason 通道，0.2.1-rc.2 起支持；更旧宿主忽略该字段、退回英文
+  // reason）。自定义模板单语原样展示。`[smart: …]` / `[args: …]` 后缀对两个
+  // 语言版本同样生效——展示版与日志版必须携带同一份决策信息。
+  const askDecision = (
+    exec: PtcPreviewExecution,
+    mode: ApprovalMode,
+    family: ToolFamily,
+    smartDetail?: string,
+  ): { kind: 'ask'; reason: string; displayReason?: { en: string; zh: string } } => {
+    const suffix = smartDetail === undefined ? '' : ` [smart: ${smartDetail}]`
+    const custom = cfgThunk().askReason
+    if (custom !== undefined && custom !== DEFAULT_ASK_REASON) {
+      return { kind: 'ask', reason: withPtcArgumentPreview(fillAskTemplate(custom, exec.name, mode, family) + suffix, exec) }
+    }
+    const reason = withPtcArgumentPreview(fillAskTemplate(DEFAULT_ASK_REASON, exec.name, mode, family) + suffix, exec)
+    return {
+      kind: 'ask',
+      reason,
+      displayReason: {
+        en: reason,
+        zh: withPtcArgumentPreview(fillAskTemplate(DEFAULT_ASK_REASON_ZH, exec.name, mode, family) + suffix, exec),
+      },
+    }
+  }
+
   // Logger helper for smart-mode decisions. Wrapped in try/catch because a
   // broken logger must never change an approval outcome (mirrors the
   // safety posture of `dsh-auto-approve`'s `logDecision`). The plugin tag
@@ -492,12 +543,21 @@ export function apply(ctx: Context, config: VolatileConfig): void {
         )
         if (isSandboxEscalation(escalation.requested, effective)) {
           logSmartDecision('ask', `detail=sandbox-escalation ${effective}->${escalation.requested}`)
+          // 提权文案同样双语：en 进日志，zh 仅作弹窗展示（与 askDecision 同一通道）。
+          const escalationReason = withPtcArgumentPreview(
+            `sandbox escalation ${effective} → ${escalation.requested} needs user confirmation (${escalation.justification})`,
+            exec,
+          )
           return {
             kind: 'ask',
-            reason: withPtcArgumentPreview(
-              `sandbox 升级 ${effective} → ${escalation.requested}，需用户确认（${escalation.justification}）`,
-              exec,
-            ),
+            reason: escalationReason,
+            displayReason: {
+              en: escalationReason,
+              zh: withPtcArgumentPreview(
+                `sandbox 升级 ${effective} → ${escalation.requested}，需用户确认（${escalation.justification}）`,
+                exec,
+              ),
+            },
           }
         }
       }
@@ -511,17 +571,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
         return { kind: 'allow' }
       }
       logSmartDecision('ask', `detail=${verdict.detail}${modelSuffix(verdict.selection)}`)
-      return {
-        kind: 'ask',
-        reason: withPtcArgumentPreview(
-          (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
-            .replace('{tool}', exec.name)
-            .replace('{mode}', mode)
-            .replace('{family}', family)
-            + (verdict.detail ? ` [smart: ${verdict.detail}]` : ''),
-          exec,
-        ),
-      }
+      return askDecision(exec, mode, family, verdict.detail)
     }
 
     if (gitLabel !== undefined) {
@@ -530,16 +580,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     }
 
     if (!needsAsk(mode, family)) return decision
-    return {
-      kind: 'ask',
-      reason: withPtcArgumentPreview(
-        (cfg.askReason ?? 'approval needed for {tool} under {mode} mode ({family})')
-          .replace('{tool}', exec.name)
-          .replace('{mode}', mode)
-          .replace('{family}', family),
-        exec,
-      ),
-    }
+    return askDecision(exec, mode, family)
   })
 
   // ── 切换：写 mode + 联动写 sandbox ───────────────────────────────────────

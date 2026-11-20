@@ -48,6 +48,23 @@ export declare const name = "dsh-user-approval";
 export type ApprovalMode = 'request' | 'auto-edit' | 'smart' | 'yolo' | 'off';
 /** 每个可切换的 ApprovalMode，用于校验与广告。 */
 export declare const APPROVAL_MODES: readonly ApprovalMode[];
+/**
+ * 默认审批文案（en）。弹窗卡片自身已带「等待审批」状态条与允许/拒绝按钮，
+ * 标题只需回答「谁、为何触发弹窗」：工具名、工具族、当前模式。短格式也把
+ * smart/PTC 追加后缀（`[smart: …]` / `[args: …]`）对标题区的挤压降到最低。
+ */
+export declare const DEFAULT_ASK_REASON = "[{family}] Tool: {tool} | Mode: {mode}";
+/**
+ * 默认审批文案的 zh 展示版。经宿主 `displayReason` 通道按 UI 语言选用
+ * （0.2.1-rc.2 起支持，即本插件 peerDependencies 下限），会话日志仍记英文
+ * `reason`。自定义 `askReason` 不走此通道，单语原样展示。
+ */
+export declare const DEFAULT_ASK_REASON_ZH = "[{family}] \u5DE5\u5177: {tool} | \u6A21\u5F0F: {mode}";
+/**
+ * 填充审批文案模板的 `{tool}` / `{mode}` / `{family}` 占位符。
+ * `replaceAll`：模板中重复出现的占位符保持一致。
+ */
+export declare function fillAskTemplate(template: string, tool: string, mode: string, family: string): string;
 /** 插件配置。全部带默认值，部署方可在 cordis.yml 覆盖。 */
 export interface Config {
     /** 新会话的默认模式；`approval/mode` 事件缺席时即此值。默认 `off`。 */
@@ -68,7 +85,7 @@ export interface Config {
     readOnlyGitCommands?: boolean;
     /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
     sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>;
-    /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。 */
+    /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。缺省走内置双语模板：zh UI 显示中文版，日志记英文。 */
     askReason?: string;
     /** Smart 分类器使用的 LLM provider。null = 继承 host 默认。 */
     smartProvider?: string | null;

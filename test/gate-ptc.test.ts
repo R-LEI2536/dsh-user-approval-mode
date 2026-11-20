@@ -12,6 +12,8 @@
  * - sub-calls are classified by family exactly like native calls;
  * - a PTC sub-call's ask reason carries an argument summary because the host
  *   approval dialog cannot show a nested call's arguments;
+ * - the default ask copy ships bilingual: en is the logged reason, zh rides
+ *   the host displayReason channel for zh UIs; a custom template stays verbatim;
  * - removing `run_code` from `autoAllowTools` restores the per-program prompt.
  *
  * The harness mirrors `test/gate-read-only-git.test.ts`: the REAL gate is
@@ -28,7 +30,11 @@ import {
   type Config as ApprovalConfig,
 } from '../src/index.ts'
 
-interface Decision { readonly kind: string; readonly reason?: string }
+interface Decision {
+  readonly kind: string
+  readonly reason?: string
+  readonly displayReason?: { readonly en: string; readonly zh: string }
+}
 interface PtcExecution {
   name: string
   arguments: unknown
@@ -101,7 +107,7 @@ test('ptc: request mode asks for a write sub-call and shows its path', async () 
   const gate = makeGate('request')
   const decision = await gate.decide(subCall('write', { path: 'src/a.ts', content: 'x' }))
   assert.equal(decision.kind, 'ask')
-  assert.match(decision.reason ?? '', /approval needed for write under request mode \(edit\)/)
+  assert.equal(decision.reason, '[edit] Tool: write | Mode: request [args: src/a.ts]')
   assert.match(decision.reason ?? '', /\[args: src\/a\.ts\]/)
 })
 
@@ -158,7 +164,7 @@ test('ptc: removing run_code from autoAllowTools restores the per-program prompt
   const gate = makeGate('request', { autoAllowTools: ['exit_plan_mode'] })
   const decision = await gate.decide(runCode())
   assert.equal(decision.kind, 'ask')
-  assert.match(decision.reason ?? '', /approval needed for run_code under request mode \(other\)/)
+  assert.match(decision.reason ?? '', /\[other\] Tool: run_code \| Mode: request/)
   assert.ok(!(decision.reason ?? '').includes('[args:'), 'a top-level call is not a PTC sub-call')
 })
 
@@ -166,7 +172,7 @@ test('ptc: native calls keep their untouched ask reason (no argument suffix)', a
   const gate = makeGate('request')
   const decision = await gate.decide({ name: 'write', arguments: { path: 'src/a.ts', content: 'x' } })
   assert.equal(decision.kind, 'ask')
-  assert.match(decision.reason ?? '', /approval needed for write under request mode \(edit\)/)
+  assert.match(decision.reason ?? '', /\[edit\] Tool: write \| Mode: request/)
   assert.ok(!(decision.reason ?? '').includes('[args:'), 'the host dialog already shows native arguments')
 })
 
@@ -184,4 +190,25 @@ test('ptc: a sub-call with no readable argument still gets a JSON summary', asyn
   const decision = await gate.decide(subCall('custom_tool', { todos: [{ content: 'x', status: 'pending' }] }))
   assert.equal(decision.kind, 'ask')
   assert.match(decision.reason ?? '', /\[args: \{"todos":\[/)
+})
+
+test('ptc: the default ask copy ships bilingual through displayReason', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide(subCall('write', { path: 'src/a.ts', content: 'x' }))
+  assert.equal(decision.kind, 'ask')
+  // English reason is what the session log and non-zh UIs keep.
+  assert.equal(decision.reason, '[edit] Tool: write | Mode: request [args: src/a.ts]')
+  // The zh display variant carries the SAME decision info (args suffix included).
+  assert.deepEqual(decision.displayReason, {
+    en: '[edit] Tool: write | Mode: request [args: src/a.ts]',
+    zh: '[edit] 工具: write | 模式: request [args: src/a.ts]',
+  })
+})
+
+test('ptc: a custom askReason displays verbatim and stays single-language', async () => {
+  const gate = makeGate('request', { askReason: 'custom copy for {tool} in {mode} mode' })
+  const decision = await gate.decide(subCall('write', { path: 'src/a.ts', content: 'x' }))
+  assert.equal(decision.kind, 'ask')
+  assert.equal(decision.reason, 'custom copy for write in request mode [args: src/a.ts]')
+  assert.equal(decision.displayReason, undefined, 'a custom template never rides the displayReason channel')
 })

@@ -51,7 +51,7 @@ const FALLBACK: Required<Config> = {
   unclassified: 'ask',
   readOnlyGitCommands: true,
   sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
-  askReason: 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell',
+  askReason: '[{family}] Tool: {tool} | Mode: {mode}',
   smartProvider: null,
   smartModel: null,
   smartExtraDangerPatterns: [],

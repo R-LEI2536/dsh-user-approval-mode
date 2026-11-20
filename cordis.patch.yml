@@ -15,6 +15,7 @@
           smart: workspace-write
           yolo: workspace-write
         # askReason: 审批弹窗里那段理由文字。部署方可在自己的 cordis.yml 中
-        # 覆盖为本族语言或自定义文本。
+        # 覆盖为自定义文本。默认模板自带双语：zh UI 显示中文版（宿主
+        # displayReason 通道），日志记英文；自定义模板则单语原样显示。
         # 占位符：{tool} 工具名 / {mode} 当前模式 / {family} 工具族（edit|shell|readonly|other）
-        askReason: 'approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell'
+        askReason: '[{family}] Tool: {tool} | Mode: {mode}'

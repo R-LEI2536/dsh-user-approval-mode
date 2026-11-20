@@ -163,6 +163,17 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 
 ### DSH Version Compatibility
 
+**v0.15.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.3)**:
+
+Same dependency line as 0.14.0 — the peer floor, dev pins and the measured
+compatibility gate are unchanged, so the entries below still describe the
+install surface. What moves in 0.15.0 is the approval-prompt copy: the
+default template is restructured (`[{family}] Tool: {tool} | Mode: {mode}`)
+and ships bilingual through the host `displayReason` channel, which every
+host from the 0.2.1-rc.2 peer floor onward supports. Verified statically
+(`pnpm typecheck`, 141 tests, `pnpm build`) against the real `0.2.2-rc.3`
+types.
+
 **v0.14.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.3)**:
 
 Same dependency line as 0.13.0 — the peer floor, dev pins and the measured
@@ -498,15 +509,27 @@ must, tighten the sandbox to `read-only` or accept the boundaries above.
 ## Customizing the Approval Prompt Text
 
 The dialog shown when a tool requires approval uses the `askReason` template.
-Override it in your `cordis.yml` to localize or rewrite the prompt — for
-example, switch it to Chinese, swap wording, or add your own guidance:
+The default is short and structured — the card itself already carries the
+"waiting for approval" strip and the Allow / Reject buttons, so the headline
+only needs to answer *who* and *why it triggered*:
+
+```
+[{family}] Tool: {tool} | Mode: {mode}
+```
+
+The default ships **bilingual**: a zh UI shows `[{family}] 工具: {tool} | 模式: {mode}`
+through the host `displayReason` channel (supported since DSH 0.2.1-rc.2, this
+plugin's peer floor; older hosts ignore the field and fall back to English),
+while the session log keeps the English text. Override `askReason` in your
+`cordis.yml` for fully custom wording — a custom template always displays
+verbatim (single language, no zh variant):
 
 ```yaml
 - insert:
     - id: dsh-user-approval-mode
       name: dsh-user-approval-mode
       config:
-        askReason: '⚠️ 工具 {tool} 需要您的批准\n当前模式：{mode} | 工具类型：{family}\n只读浏览应使用 read/glob/list_directory 而非 shell'
+        askReason: '⚠️ 工具 {tool} 需要您的批准（当前模式：{mode} | 工具类型：{family}）'
 ```
 
 Available placeholders: `{tool}` (tool name), `{mode}` (current approval
@@ -514,21 +537,22 @@ mode), `{family}` (edit | shell | readonly | other).
 
 A PTC program's inner tool call gets a `[args: …]` suffix appended after the
 rendered template (the command or path, one line, capped at 200 characters),
-because the host dialog cannot display a nested call's arguments. The suffix is
-not configurable and no placeholder controls it; native calls never get one.
+because the host dialog cannot display a nested call's arguments. The suffix
+applies to both language variants and is not configurable; native calls never
+get one.
 
-**Why this is a manual step**: the text is generated on the server and sent
-to the upstream DSH approval dialog. The plugin has no locale signal at that
-point (the language setting lives on the client), so the simplest and most
-predictable model is: deployers who need a non-English prompt set it
-directly. The mode selector chip on the composer toolbar is independently
-localized via DSH's locale service (`src/client/locales.ts`), so the chip
-labels already follow the UI language automatically — `askReason` is the one
-piece that needs manual configuration.
+**Custom text stays manual**: the default's zh variant is built in, but a
+custom `askReason` is one plain string — the server has no locale signal at
+ask time (the language setting lives on the client), so a deployer needing a
+non-English custom prompt sets it directly. The mode selector chip on the
+composer toolbar is independently localized via DSH's locale service
+(`src/client/locales.ts`).
 
 **Inline color or markup inside `askReason` is not supported**: the upstream
 approval dialog renders the reason as a plain string with no markup channel,
-so styling or coloring parts of the template has no effect.
+so styling or coloring parts of the template has no effect. Newlines do not
+render as line breaks either — the dialog headline collapses them to spaces,
+so keep the template on one line.
 
 ## Settings Page
 
@@ -545,7 +569,7 @@ sub-sections:
 2. **Sandbox policy** — one dropdown per mode (`request`, `auto-edit`,
    `yolo`). Dropdown labels display in English in both `en` and `zh`
    locales (the values are technical identifiers shared with the schema).
-3. **Approval prompt** — multi-line `askReason` template
+3. **Approval prompt** — single-line `askReason` template
 
 The remaining Config fields — `default`, `unclassified`, and the six
 `smart*` deployer knobs — are deliberately **deployer-only**: they live in
@@ -677,8 +701,8 @@ You can customize the plugin behavior in your agent preset:
           auto-edit: workspace-write
           yolo: workspace-write
         
-        # Custom approval reason message
-        askReason: 'approval needed for {tool} under {mode} mode ({family})'
+        # Custom approval reason message (zh UIs show a built-in zh variant of the default)
+        askReason: '[{family}] Tool: {tool} | Mode: {mode}'
 ```
 
 ### Disable the Plugin
@@ -700,7 +724,7 @@ You can customize the plugin behavior in your agent preset:
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
 | `readOnlyGitCommands` | boolean | `true` | Allow a strictly-parsed read-only command chain instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
-| `askReason` | string | *see default* | Custom message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders |
+| `askReason` | string | `[{family}] Tool: {tool} \| Mode: {mode}` | Message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders. The default ships bilingual (zh UIs show a built-in zh variant; logs keep English); a custom template displays verbatim |
 | `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`) |
 | `smartModel` | string \| null | `null` | LLM model for the smart-mode classifier (null = inherit `agentDefaultModel`) |
 
@@ -711,8 +735,11 @@ insert behave identically.
 ### Default Ask Reason
 
 ```
-approval needed for {tool} under {mode} mode ({family}); read-only browsing should use read/glob/list_directory instead of shell
+[{family}] Tool: {tool} | Mode: {mode}
 ```
+
+zh UIs display `[{family}] 工具: {tool} | 模式: {mode}` instead (host
+`displayReason` channel); the session log keeps the English text.
 
 ## Tool Family Classification
 

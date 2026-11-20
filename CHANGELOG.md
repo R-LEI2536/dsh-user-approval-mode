@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The default approval prompt is restructured and ships bilingual.** The old
+  default — `approval needed for {tool} under {mode} mode ({family}); read-only
+  browsing should use read/glob/list_directory instead of shell` — carried a
+  hint addressed to the model rather than the human approver, showed it in
+  every family's dialog (edit-family and unclassified asks included, where it
+  was off-topic), and crowded the card headline once the smart/PTC suffixes
+  (`[smart: …]` / `[args: …]`) appended. The new default is short and
+  structural — `[{family}] Tool: {tool} | Mode: {mode}` — because the host card
+  already carries the "waiting for approval" strip and the Allow / Reject
+  buttons; the headline only needs to answer who and why.
+
+- **zh UIs now see the approval copy in Chinese.** The default template rides
+  the host `displayReason` channel (added in DSH 0.2.1-rc.2, this plugin's
+  peer floor): a zh UI displays `[{family}] 工具: {tool} | 模式: {mode}`, the
+  session log keeps the English reason, and older-than-floor hosts ignore the
+  field and fall back to English. The smart-mode sandbox-escalation ask
+  becomes bilingual the same way (its logged reason switches from hardcoded
+  Chinese to English). A custom `askReason` displays verbatim and never rides
+  the channel — single language, as before.
+
+- The two runtime fallback ask sites now share one `askDecision` builder with
+  the schema default, closing a pre-existing inconsistency where hardcoded
+  fallbacks would have shown a different (shorter) text than the configured
+  default.
+
+### Fixed
+
+- The READMEs claimed multi-line `askReason` support, but the host dialog
+  headline collapses newlines to spaces; the docs now say single-line and the
+  shipped example no longer relies on `\n`.
+
+### Tests
+
+- `test/gate-ptc.test.ts` pins the new default format, adds a bilingual
+  `displayReason` case (en reason + zh display carrying the same
+  `[args: …]` suffix), and a custom-template case that stays single-language.
+
 ## [0.14.0] - 2026-11-20
 
 ### Changed
