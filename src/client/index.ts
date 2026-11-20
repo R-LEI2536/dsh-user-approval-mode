@@ -5,7 +5,7 @@
  *
  * Both registrations bind against the plugin entry's volatile Config: the
  * chip routes through `/approval-mode` slash command (per-session mode switch),
- * while the settings page binds the user-editable section (8 of the 16
+ * while the settings page binds the user-editable section (10 of the 18
  * Config fields — the rest stay deployer-only). Settings writes flow through
  * the configForms RPC back to the Host, whose runtime folds them into the
  * entry's profile user layer and updates the live volatile references.
@@ -32,6 +32,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { ApprovalModeChip, type ApprovalModeChipInjected } from './ApprovalModeChip'
 import { ApprovalModeSettings, type ApprovalModeSettingsInjected } from './ApprovalModeSettings'
+import { SmartModelDirectoryController } from './model-directory'
 import { parseApprovalMode } from './mode-text'
 import type { ApprovalMode, Config } from '../index'
 import { en, zh, enPage, zhPage, type ApprovalKey, type ApprovalPageKey } from './locales'
@@ -61,7 +62,7 @@ const ENTRY_ID = 'dsh-user-approval-mode'
 const SETTINGS_ORDER = 1100
 
 /** Required services: slot registry, commands Remote, locale registry, configuration forms. */
-export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'configForms']
+export const inject = ['slots', 'remote', 'remote.commands', 'remote.session', 'locale', 'configForms']
 
 /**
  * Per-session mode cache for the chip — a first-paint hint, not the source of
@@ -138,7 +139,26 @@ export function apply(ctx: ClientContext): void {
     }),
   }, ApprovalModeChip))
 
-  // ── Settings page (full-page editor for the eight user-editable fields) ──
+  // ── Model directory (smart-classifier pickers) ──────────────────────────
+  // The catalogue is a Host fact, not a settings value: adapters come and go
+  // and a reconnect hands the page a different Host. The controller is created
+  // once, invalidated by the two registry notifications, and dropped on a
+  // connection reset; it loads lazily, so a page visit that never opens a
+  // picker pays nothing.
+  const directory = new SmartModelDirectoryController(ctx)
+  ctx.effect(() => ctx.remote.$on('llm/adapters-updated', () => { directory.refresh() }), 'dsh-user-approval: adapter invalidations')
+  ctx.effect(() => ctx.remote.$on('llm/models-updated', () => { directory.refresh() }), 'dsh-user-approval: model invalidations')
+  // `connection/reset` is declared by the Client Connection package, which this
+  // plugin does not depend on directly (the browser module table supplies it at
+  // runtime). Cordis events are dynamic, so the listener below always fires;
+  // the cast only widens the event-name type instead of adding a typing
+  // dependency for one hook. A reconnect can mean a different Host, so the
+  // cached catalogue — which names that Host's providers — has to go.
+  const onConnectionReset = ctx.on as unknown as (name: 'connection/reset', listener: () => void) => () => void
+  ctx.effect(() => onConnectionReset.call(ctx, 'connection/reset', () => { directory.reset() }), 'dsh-user-approval: connection generation')
+  ctx.effect(() => () => { directory.dispose() }, 'dsh-user-approval: model directory')
+
+  // ── Settings page (full-page editor for the ten user-editable fields) ────
   // The page lives at the bottom of the sidebar (`order: 1100`, after the
   // Plugins section). It binds the plugin entry's volatile Config via
   // `configForms.get`; user edits go through `form.set`/`form.unset` and are
@@ -156,6 +176,7 @@ export function apply(ctx: ClientContext): void {
       // form's disposer is owned by this plugin's fiber. Binding adds no wire
       // read of its own because settings reads ride the shared describe mirror.
       form: ctx.configForms.get<Config>(ENTRY_ID),
+      directory,
     }),
   }, ApprovalModeSettings))
 }

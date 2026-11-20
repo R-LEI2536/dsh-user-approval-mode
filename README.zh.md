@@ -304,7 +304,7 @@ Smart 模式在原有手动审批之上加了 LLM 驱动的自动审批环节。
 - **LLM 可能误判。** 分类器可能把危险命令错认成例行而放行。13 条正则的危险清单作为硬底先于 LLM 跑（`rm -rf /`、`mkfs`、`curl|sh`、fork bomb 等），但无法枚举所有破坏性模式。仅在「最坏情况可恢复」的环境下使用 smart 模式。
 - **没有「为何放行」的弹窗可见性。** 分类器或只读 git 快路径放行时，用户看不到提示；理由只落在 DSH 日志里（`[dsh-user-approval[smart]] decision=allow …`、`[dsh-user-approval[read-only-git]] decision=allow …`），分类器批准的 evidence 另在 LLM 请求 payload 里。
 - **会话记忆只在进程内。** 记忆是 `Map<sha256(toolName + rawArguments), ...>` 的内存结构；DSH 重启即清空。重启后每个 shell 命令首跑都要重新付一次 LLM 成本。
-- **成本按唯一 shell 调用计。** 每条 shell 命令首次跑消耗一次 LLM 调用；TTL 内的重复免费。若用户没填 `smartProvider`/`smartModel`，host 默认沿用主对话模型，成本会偏高——选轻量模型降本。
+- **成本按唯一 shell 调用计。** 每条 shell 命令首次跑消耗一次 LLM 调用；TTL 内的重复免费。若用户没填 `smartProvider`/`smartModel`，host 默认沿用主对话模型，成本会偏高——选轻量模型（以及模型支持时选更低的 reasoning 档位）可降本。
 - **并发受 `smartSessionMemory` 容量限制。** 记忆按会话隔离，FIFO 上限 200 条；长会话周期性地把旧批准循环出去，那部分会重付 LLM 成本。
 - **插件重载会排空在飞分类。** 插件拥有一个 `AbortController`，其 signal 注入所有在飞 LLM 调用；卸载时 abort + `Promise.allSettled` drain 之后，新插件实例才接手。卡住的请求不会跨重载污染下游。
 - **两个 seam 都缺失时退回 ask。** 若 host 没有 `ctx.llm` 或 `ctx.agentDefaultModel`，smart 模式下每个 shell 调用都退回 ask（`detail: 'llm-unavailable'` 或 `'no-default-model'`）。分类器永远不会在「危险清单 + 分类器批准」之外的路径上静默放行。
@@ -370,7 +370,7 @@ PTC 程序内的工具子调用会在模板渲染结果之后追加 `[args: …]
 ## 设置页面
 
 打开 Web UI 侧边栏 → **设置** → **审批模式**（最底部，Plugins 之后）即可
-编辑本插件暴露的九个用户可编辑 Config 字段。页面分为三个子区块：
+编辑本插件暴露的十个用户可编辑 Config 字段。页面分为四个子区块：
 
 1. **工具族分类** —— 每个族（`editTools`、`shellTools`、`readOnlyTools`、
    `autoAllowTools`）一个逗号分隔的文本输入框，外加只读 git 快路径的开关
@@ -379,7 +379,16 @@ PTC 程序内的工具子调用会在模板渲染结果之后追加 `[args: …]
 2. **Sandbox 策略** —— 每个模式（`request`、`auto-edit`、`yolo`）一个
    下拉框。下拉标签在 `en` 与 `zh` 两种 locale 下都显示英文（值是与
    schema 共用的技术标识符）。
-3. **审批弹窗** —— `askReason` 单行文本模板
+3. **Smart 分类器** —— provider / model / reasoning 档位三个下拉框，选项来自
+   宿主当前公布的模型目录（见下）。
+4. **审批弹窗** —— `askReason` 单行文本模板
+
+Smart 分类器的三个下拉框读取宿主模型目录（`session/modelCatalog`）：页面首次
+渲染时加载，LLM 注册表变化（`llm/adapters-updated`、`llm/models-updated`）或
+连接重置时重读。已保存但宿主不再公布的路由会保留在列表里并标注「不在当前目录
+中」，不会被静默改写。provider 与 model 是耦合的：选了具体 provider 就会同时
+选定它公布的一个模型；选「继承宿主默认」会一并清空三个字段；档位只在该模型
+保持不变且仍然公布它时才保留。
 
 其余 Config 字段（`default`、`unclassified` 以及六个 `smart*` 部署方旋钮）
 刻意保持为**仅部署方可配**：写在部署方的 cordis 配置里、不出现在设置页面。
@@ -417,6 +426,9 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `readOnlyGitCommands` | 开关 | 严格解析后的只读命令（或命令链，外加 `echo "…"` 行）免审（默认开） |
 | `sandboxDefaults` | 每模式下拉框 | 切到该模式时联动写入的 sandbox 策略 |
 | `askReason` | 多行文本 | 审批弹窗文案模板（占位符：`{tool}` / `{mode}` / `{family}`） |
+| `smartProvider` | 下拉框 | smart 分类器的 LLM provider，从宿主公布的 provider 里选（「继承宿主默认」= 跟随 `agentDefaultModel`） |
+| `smartModel` | 下拉框 | smart 分类器的模型，只列所选 provider 公布的模型 |
+| `smartReasoningEffort` | 下拉框 | 分类调用的 reasoning 档位，仅模型公布档位时可选（「模型默认」= 不下传该选项） |
 
 仅部署方可配（不在页面展示，写在 `cordis.yml`）：
 
@@ -425,7 +437,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 
 ### 生效时机
 
-九个用户可编辑字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，
+十个用户可编辑字段都是 **live** —— 下一次 `tools/pre-execute` 即生效，
 无需重启 DSH。运行时闸门每次工具调用都会重读 live 的 volatile Config。
 
 ### 族名单之间的重叠
@@ -513,8 +525,9 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的只读命令链而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
 | `askReason` | string | `[{family}] Tool: {tool} \| Mode: {mode}` | 审批请求的消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符。默认自带双语（zh UI 显示内置中文版，日志记英文）；自定义模板单语原样显示 |
-| `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
-| `smartModel` | string \| null | `null` | smart 模式分类器的 LLM model（null = 继承 `agentDefaultModel`） |
+| `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`）。设置页只列宿主当前公布的 provider；部署方仍可在此固定一个 |
+| `smartModel` | string \| null | `null` | smart 模式分类器的 LLM model（null = 继承 `agentDefaultModel`）。设置页只列所选 provider 公布的模型 |
+| `smartReasoningEffort` | string \| null | `null` | 单次分类调用使用的 reasoning 档位（null = 不下传该选项，沿用模型默认档位）。模型不认的档位会让调用失败，分类器按 fail-safe 转人工复核 |
 
 上表 `默认值` 列就是插件的 schema 默认值（`src/index.ts`），随附的 bundle
 patch 逐字重复同一份名单——装 bundle 与手动 insert 的行为一致。

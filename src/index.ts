@@ -149,6 +149,8 @@ export interface Config {
   smartProvider?: string | null
   /** Smart 分类器使用的 LLM model。null = 继承 host 默认。 */
   smartModel?: string | null
+  /** Smart 分类器调用的 reasoning 档位。null = 不传该选项，由模型自身默认档位决定。 */
+  smartReasoningEffort?: string | null
   /** 追加到内置 13 条危险清单之后的正则；命中直接转人工。 */
   smartExtraDangerPatterns?: string[]
   /** 整组替换内置 13 条危险清单。`null`（默认）保留内置；非 null 数组完全替换。 */
@@ -164,7 +166,7 @@ export interface Config {
 }
 
 /**
- * 运行时 Config：9 个设置页可编辑字段包在 `Volatile<T>` 引用里（live，随 profile
+ * 运行时 Config：10 个设置页可编辑字段包在 `Volatile<T>` 引用里（live，随 profile
  * user 层更新），其余 8 个部署方-only 字段为启动时定值的普通值。类型镜像
  * `Config` schema（含 `.volatile()` 链）的校验输出，apply 按此形状读配置。
  */
@@ -180,6 +182,7 @@ export interface VolatileConfig {
   askReason: Volatile<string>
   smartProvider: Volatile<string | null>
   smartModel: Volatile<string | null>
+  smartReasoningEffort: Volatile<string | null>
   smartExtraDangerPatterns: string[]
   smartDangerPatterns: string[] | null
   smartSessionMemory: boolean
@@ -232,6 +235,9 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .volatile(),
   smartModel: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null)
     .description('LLM model id for the smart-mode shell classifier. Null inherits the host default-model selection.')
+    .volatile(),
+  smartReasoningEffort: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null)
+    .description('Reasoning effort for the smart-mode shell classifier call. Null (default) omits the option, so the model\'s own default effort applies. Only meaningful for models that advertise reasoning efforts; an effort the model does not accept fails the call, and the classifier falls back to manual review.')
     .volatile(),
   smartExtraDangerPatterns: Schema.array(Schema.string()).default([])
     .description('Append-only danger regex patterns the smart classifier checks before the LLM. Case-insensitive; compiled at startup.'),
@@ -369,6 +375,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     askReason: config.askReason.get(),
     smartProvider: config.smartProvider.get(),
     smartModel: config.smartModel.get(),
+    smartReasoningEffort: config.smartReasoningEffort.get(),
     smartExtraDangerPatterns: config.smartExtraDangerPatterns,
     smartDangerPatterns: config.smartDangerPatterns,
     smartSessionMemory: config.smartSessionMemory,
@@ -455,8 +462,11 @@ export function apply(ctx: Context, config: VolatileConfig): void {
   // classifier actually ran. The selection rides the evaluator verdict, so
   // each classification produces exactly one log line with the effective
   // model id (including host-default inheritance).
-  const modelSuffix = (selection?: { provider: string; model: string }): string =>
-    selection === undefined ? '' : ` model=${selection.model} provider=${selection.provider}`
+  const modelSuffix = (selection?: { provider: string; model: string; reasoningEffort?: string }): string =>
+    selection === undefined
+      ? ''
+      : ` model=${selection.model} provider=${selection.provider}`
+        + (selection.reasoningEffort === undefined ? '' : ` effort=${selection.reasoningEffort}`)
 
   // Logger for the read-only command fast-path. Same posture as
   // `logSmartDecision` (a broken logger must never change an outcome), but a
@@ -491,6 +501,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       smartClassifierPrompt: cfg.smartClassifierPrompt ?? DEFAULT_SMART_CLASSIFIER_PROMPT,
       smartProvider: cfg.smartProvider ?? null,
       smartModel: cfg.smartModel ?? null,
+      smartReasoningEffort: cfg.smartReasoningEffort ?? null,
       readOnlyGitCommands: cfg.readOnlyGitCommands ?? true,
     }
     const patterns = compileSmartDangerPatterns(smartCfg.smartDangerPatterns, smartCfg.smartExtraDangerPatterns)

@@ -49,6 +49,8 @@ export interface SmartEvaluatorConfig {
   readonly smartClassifierPrompt: string
   readonly smartProvider: string | null
   readonly smartModel: string | null
+  /** Reasoning 档位；null 表示不传该选项，用模型自身默认档位。 */
+  readonly smartReasoningEffort: string | null
   /** Deployer kill switch for the read-only git fast-path. The fast-path is
    *  checked after the danger list and before the LLM classifier, so a
    *  configured danger pattern always wins (see `read-only-git.ts`). */
@@ -62,6 +64,8 @@ export interface SmartLlmService {
   stream(options: {
     provider: string
     model: string
+    /** 模型公布的 reasoning 档位 id；省略则用模型默认档位。 */
+    reasoningEffort?: string
     messages: readonly { role: string; content: readonly { type: string; text: string }[] }[]
     system?: string
     sessionId?: string
@@ -81,6 +85,8 @@ export interface SmartDefaultModelService {
 export interface SmartModelSelection {
   readonly provider: string
   readonly model: string
+  /** 显式配置的 reasoning 档位；省略表示沿用模型默认档位。 */
+  readonly reasoningEffort?: string
 }
 
 /** Verdict for one shell call. `allow` means the plugin should return
@@ -476,7 +482,7 @@ const COMMAND_SUMMARY_MAX_CHARS = 160
 export async function classifySmartShell(
   llm: SmartLlmService,
   defaultModel: SmartDefaultModelService | undefined,
-  selection: { provider: string; model: string },
+  selection: SmartModelSelection,
   evidence: ClassifierEvidence,
   sessionId: string,
   execSignal: AbortSignal,
@@ -499,6 +505,7 @@ export async function classifySmartShell(
     const options = {
       provider: selection.provider,
       model: selection.model,
+      ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
       messages: [message],
       system: classifierPrompt,
       sessionId,
@@ -535,7 +542,7 @@ export async function classifySmartShell(
 function resolveModelSelection(
   config: SmartEvaluatorConfig,
   defaultModel: SmartDefaultModelService | undefined,
-): { provider: string; model: string } | undefined {
+): SmartModelSelection | undefined {
   const inheritsProvider = config.smartProvider == null
   const inheritsModel = config.smartModel == null
   const fallback = inheritsProvider || inheritsModel
@@ -549,7 +556,14 @@ function resolveModelSelection(
   ) {
     return undefined
   }
-  return Object.freeze({ provider, model })
+  // 档位只在显式配置时下传。模型不认这个档位时调用会失败，分类器按既有
+  // fail-safe 走人工复核，不会被静默吞掉。
+  const reasoningEffort = config.smartReasoningEffort
+  return Object.freeze({
+    provider,
+    model,
+    ...reasoningEffort == null || reasoningEffort.length === 0 ? {} : { reasoningEffort },
+  })
 }
 
 /** Resolve user events across the two DSH host generations. 0.1.2-rc.1

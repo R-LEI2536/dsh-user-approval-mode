@@ -80,7 +80,10 @@ Per-session `Map<sha256(toolName + rawArguments), { source: 'classifier' | 'huma
 The system prompt the LLM sees when asked to classify a shell call. Defaults to `DEFAULT_SMART_CLASSIFIER_PROMPT` (verbatim port of `dsh-auto-approve`'s `CLASSIFIER_SYSTEM_PROMPT`). Deployer-only override (`smartClassifierPrompt`); never exposed in the settings page — the safety contract lives behind the deployer's signature.
 
 **Smart LLM seam**:
-Two optional services the host may expose for the classifier: `ctx.llm` (the `LlmRuntime` stream API; cast at use site to a narrower `SmartLlmService`) and `ctx.agentDefaultModel` (`currentSelection(): { provider, model } | undefined`). When `smartProvider` / `smartModel` are non-null in the settings, they win over `agentDefaultModel.currentSelection()`. When both seams are absent, every shell call in smart mode falls back to ask (`detail: 'llm-unavailable'` or `'no-default-model'`).
+Two optional services the host may expose for the classifier: `ctx.llm` (the `LlmRuntime` stream API; cast at use site to a narrower `SmartLlmService`) and `ctx.agentDefaultModel` (`currentSelection(): { provider, model } | undefined`). When `smartProvider` / `smartModel` are non-null in the settings, they win over `agentDefaultModel.currentSelection()`. `smartReasoningEffort` rides the same call as `GenerateOptions.reasoningEffort`; `null` omits the option so the model's own default applies, and an effort the model rejects fails the call into the ordinary ask fallback. When both seams are absent, every shell call in smart mode falls back to ask (`detail: 'llm-unavailable'` or `'no-default-model'`).
+
+**Smart model directory** (`src/client/model-directory.ts`):
+The settings page's provider/model/effort pickers are fed by the Host catalogue (`remote.session.modelCatalog()`), not by free text. The controller loads lazily (`ensure()` only acts while idle), keeps the newest response when a `refresh()` supersedes an in-flight one (generation guard), publishes `status: 'idle' | 'loading' | 'ready' | 'error'`, and is invalidated by `llm/adapters-updated`, `llm/models-updated`, and `connection/reset`. A stored route the catalogue no longer advertises stays selectable and is labelled as outside the catalogue. The catalogue is never written through `configForms` — it is a fact about the running Host, not a settings value.
 
 **Smart lifetime signal**:
 A plugin-owned `AbortController` whose signal is threaded into every in-flight LLM call. When the plugin unloads, the controller is aborted and all in-flight classifications are drained via `Promise.allSettled` before the plugin finishes tearing down — keeps reload from leaking pending requests that would later pollute downstream decisions.
@@ -98,10 +101,10 @@ Template string for the approval dialog reason text. Supports `{tool}` / `{mode}
 The approval mode assigned to a new session when no override exists. Configured in `cordis.yml` entry config (field `default`); not exposed in the user settings page.
 
 **Settings namespace `dsh-user-approval-mode`**:
-The profile entry id under which the user-editable fields live: the nine
+The profile entry id under which the user-editable fields live: the ten
 `Volatile`-wrapped Config fields (`editTools`, `shellTools`,
 `readOnlyTools`, `autoAllowTools`, `readOnlyGitCommands`, `sandboxDefaults`,
-`askReason`, `smartProvider`, `smartModel`) plus the deployer-only plain
+`askReason`, `smartProvider`, `smartModel`, `smartReasoningEffort`) plus the deployer-only plain
 fields (`default`, `unclassified`,
 `smartExtraDangerPatterns`, `smartDangerPatterns`, `smartSessionMemory`,
 `smartSessionMemoryTtlMs`, `smartTimeoutMs`, `smartClassifierPrompt`). User edits persist to the

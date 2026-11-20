@@ -5,7 +5,7 @@
  *
  * Both registrations bind against the plugin entry's volatile Config: the
  * chip routes through `/approval-mode` slash command (per-session mode switch),
- * while the settings page binds the user-editable section (8 of the 16
+ * while the settings page binds the user-editable section (10 of the 18
  * Config fields — the rest stay deployer-only). Settings writes flow through
  * the configForms RPC back to the Host, whose runtime folds them into the
  * entry's profile user layer and updates the live volatile references.

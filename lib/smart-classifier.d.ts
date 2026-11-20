@@ -17,6 +17,8 @@ export interface SmartEvaluatorConfig {
     readonly smartClassifierPrompt: string;
     readonly smartProvider: string | null;
     readonly smartModel: string | null;
+    /** Reasoning 档位；null 表示不传该选项，用模型自身默认档位。 */
+    readonly smartReasoningEffort: string | null;
     /** Deployer kill switch for the read-only git fast-path. The fast-path is
      *  checked after the danger list and before the LLM classifier, so a
      *  configured danger pattern always wins (see `read-only-git.ts`). */
@@ -29,6 +31,8 @@ export interface SmartLlmService {
     stream(options: {
         provider: string;
         model: string;
+        /** 模型公布的 reasoning 档位 id；省略则用模型默认档位。 */
+        reasoningEffort?: string;
         messages: readonly {
             role: string;
             content: readonly {
@@ -55,6 +59,8 @@ export interface SmartDefaultModelService {
 export interface SmartModelSelection {
     readonly provider: string;
     readonly model: string;
+    /** 显式配置的 reasoning 档位；省略表示沿用模型默认档位。 */
+    readonly reasoningEffort?: string;
 }
 /** Verdict for one shell call. `allow` means the plugin should return
  *  `{ kind: 'allow' }`; `ask` means it should fall through to the existing
@@ -149,10 +155,7 @@ interface ClassifierEvidence {
     readonly latestUserMessage: string | null;
 }
 /** One LLM call with timeout + lifetime signal + protocol aggregation. */
-export declare function classifySmartShell(llm: SmartLlmService, defaultModel: SmartDefaultModelService | undefined, selection: {
-    provider: string;
-    model: string;
-}, evidence: ClassifierEvidence, sessionId: string, execSignal: AbortSignal, lifetimeSignal: AbortSignal, timeoutMs: number, classifierPrompt: string): Promise<CollectedSmartClassifierText>;
+export declare function classifySmartShell(llm: SmartLlmService, defaultModel: SmartDefaultModelService | undefined, selection: SmartModelSelection, evidence: ClassifierEvidence, sessionId: string, execSignal: AbortSignal, lifetimeSignal: AbortSignal, timeoutMs: number, classifierPrompt: string): Promise<CollectedSmartClassifierText>;
 /** Build the smart-mode shell evaluator. The factory closes over the
  *  current `SmartEvaluatorConfig`, the compiled patterns, the LLM seam,
  *  and the lifetime signal — all of which can be re-read on each plugin

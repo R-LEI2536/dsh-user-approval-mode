@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The smart-classifier provider/model rows are pickers, not free text, and
+  gain a reasoning-effort row.** The three rows are dropdowns fed by the Host
+  model catalogue (`remote.session.modelCatalog()`): provider lists what the
+  Host advertises, model lists the selected provider's models, and effort
+  lists the efforts that model publishes. `Inherit host default` (the `null`
+  value) is a first-class entry that names the current host default, so
+  inheritance is no longer a blind setting. A stored route the catalogue no
+  longer advertises stays visible and is labelled as outside the catalogue
+  instead of being silently rewritten. The catalogue is a Host fact: it loads
+  lazily on the page's first render, reloads on `llm/adapters-updated` /
+  `llm/models-updated`, and drops on `connection/reset`
+  (`src/client/model-directory.ts`).
+- **New `smartReasoningEffort` Config field** (user-editable,
+  `string | null`, default `null`). When set, the classifier call carries
+  `GenerateOptions.reasoningEffort`; `null` omits the option so the model's
+  default effort applies. A model that rejects the effort fails the call and
+  the verdict falls back to manual review, like every other classifier error.
+  The resolved effort also rides the decision log line (`effort=…`) and the
+  verdict's model selection.
+
 - **PTC preset: the top-level `run_code` call is now classified by its
   program's code structure** (ADR 0004 revision). `run_code` stays in
   `autoAllowTools`, but before that allow takes effect the gate parses the
@@ -33,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Provider and model are coupled in the settings UI: choosing a concrete
+  provider also selects a model it advertises, choosing `Inherit host default`
+  clears provider, model, and effort together, and a configured effort
+  survives a change only while the same model stays selected and still
+  advertises it. The server-side schema keeps the three fields independent, so
+  a deployer may still pin them separately in `cordis.yml`.
 - The bundled `dsh-approval-shell-style` skill's PTC contract section now
   states the code-structure rule: a top-level program passes only when it is
   pure `tools.*` calls, and a direct `node:fs` / `node:child_process` import

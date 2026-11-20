@@ -1,5 +1,5 @@
 /**
- * ApprovalModeSettings: the settings.section page for editing the nine
+ * ApprovalModeSettings: the settings.section page for editing the ten
  * user-facing Config fields. Bound to the plugin entry's volatile Config via
  * the injected configuration form; reads via `form.getSnapshot()`, writes via
  * `form.set()` (merge into the profile user layer) or `form.unset(field)`
@@ -11,16 +11,21 @@
  * vertical block (label row with a text Reset on the right, control,
  * hint) separated from its neighbours by a 1px hairline.
  *
+ * The smart-classifier provider/model/effort rows are dropdowns fed by the
+ * live Host model directory (see model-directory.ts) rather than free-text
+ * inputs, so a configured route is always one the Host actually advertises.
+ *
  * Note: the other 8 Config fields are part of the schema but are
  * deliberately deployer-only — they live in `cordis.yml`, not here.
  */
 import { useState, useEffect, useSyncExternalStore, useRef, type ReactElement } from 'react'
 import type { PropsRuntime, InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
-import { Menu, Input, Switch, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, Switch, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 // DSH 0.1.7: `SettingsScope` 已改名为 `ConfigForm`（dsh-client-ui-settings 的客户端子路径）。
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { Config } from '../index'
 import type { ApprovalPageKey } from './locales'
+import type { SmartCatalogGroup, SmartModelDirectoryFace } from './model-directory'
 import { formatToolList, parseToolList, sameToolList } from './tool-list'
 import css from './ApprovalModeSettings.module.css'
 
@@ -30,6 +35,8 @@ import css from './ApprovalModeSettings.module.css'
 export interface ApprovalModeSettingsInjected {
   /** Live configuration form for the profile entry's volatile Config. */
   form: ConfigForm<Config>
+  /** Live Host model directory backing the smart-classifier pickers. */
+  directory: SmartModelDirectoryFace
 }
 
 /** Full component props: runtime share + injected share + locale seat. */
@@ -54,6 +61,7 @@ const FALLBACK: Required<Config> = {
   askReason: '[{family}] Tool: {tool} | Mode: {mode}',
   smartProvider: null,
   smartModel: null,
+  smartReasoningEffort: null,
   smartExtraDangerPatterns: [],
   smartDangerPatterns: null,
   smartSessionMemory: true,
@@ -77,6 +85,7 @@ function readValue(snapshotValue: Config | undefined): Required<Config> {
     askReason: c.askReason ?? FALLBACK.askReason,
     smartProvider: c.smartProvider ?? FALLBACK.smartProvider,
     smartModel: c.smartModel ?? FALLBACK.smartModel,
+    smartReasoningEffort: c.smartReasoningEffort ?? FALLBACK.smartReasoningEffort,
     smartExtraDangerPatterns: c.smartExtraDangerPatterns ?? FALLBACK.smartExtraDangerPatterns,
     smartDangerPatterns: c.smartDangerPatterns ?? FALLBACK.smartDangerPatterns,
     smartSessionMemory: c.smartSessionMemory ?? FALLBACK.smartSessionMemory,
@@ -120,29 +129,47 @@ function FieldShell({ label, descKey, t, onReset, resetLabel, children }: FieldS
 interface EnumDropdownProps<T extends string> {
   value: T
   items: readonly { id: T; label: string }[]
+  /** Short label for the trigger; menu rows use each item's own label. */
   resolveLabel: (id: T) => string
   onChange: (next: T) => void
+  /** Disables the trigger; used while a dependent list is unavailable. */
+  disabled?: boolean
+  /** Called when the menu opens, e.g. to lazily load its options. */
+  onOpen?: () => void
 }
 
 /** Anchored Menu used as a single-select dropdown. */
-function EnumDropdown<T extends string>({ value, items, resolveLabel, onChange }: EnumDropdownProps<T>) {
+function EnumDropdown<T extends string>({ value, items, resolveLabel, onChange, disabled, onOpen }: EnumDropdownProps<T>) {
   const [open, setOpen] = useState(false)
   const anchorRef = useRef<HTMLButtonElement | null>(null)
+  // A control can be disabled while its menu is open (a commit in flight, or a
+  // dependent list going away); close it so re-enabling does not pop it open.
+  useEffect(() => { if (disabled) setOpen(false) }, [disabled])
+  const triggerLabel = resolveLabel(value)
   return (
     <Menu
-      open={open}
+      open={open && !disabled}
       anchor={(
         <button
           ref={anchorRef}
           type="button"
-          className={`${css.dropdownTrigger} ${open ? css.open : ''}`}
-          onClick={() => { setOpen(!open) }}
+          className={`${css.dropdownTrigger} ${open && !disabled ? css.open : ''}`}
+          disabled={disabled}
+          title={triggerLabel}
+          onClick={() => {
+            if (disabled) return
+            if (!open) onOpen?.()
+            setOpen(!open)
+          }}
         >
-          <span>{resolveLabel(value)}</span>
+          <span className={css.dropdownValue}>{triggerLabel}</span>
           <IconChevronDownOutlineRegular size={14} className={css.dropdownChevron} />
         </button>
       )}
-      items={items.map(item => ({ id: item.id, label: resolveLabel(item.id) }))}
+      // The menu may be wider than the trigger, so each row keeps its own
+      // label: the inherited entry names the current default, and a stored
+      // value that the catalogue no longer advertises is marked as such.
+      items={items.map(item => ({ id: item.id, label: item.label }))}
       selectedId={value}
       onSelect={(id) => {
         setOpen(false)
@@ -210,7 +237,7 @@ function CsvInput({ value, onChange, placeholder, disabled }: CsvInputProps) {
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
-export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
+export function ApprovalModeSettings({ form, directory, t }: ApprovalModeSettingsProps) {
   // useSyncExternalStore on the form; getSnapshot returns a stable reference
   // until the next commit, so React bails out of unnecessary re-renders.
   const snapshot = useSyncExternalStore(
@@ -234,19 +261,28 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
   const reset = (field: keyof Config): void => { void resetField(field) }
 
   // Official settings-page pattern (cf. DeveloperToolsRow): a commit disables
-  // the control while in flight, and a refused write surfaces an alert instead
-  // of silently reverting — the recovery re-read would otherwise erase the
-  // field on screen without the user knowing why. No auto-retry: re-applying
-  // could clobber a concurrent edit.
-  const commitField = async (field: keyof Config, next: unknown): Promise<void> => {
+  // the controls being written while in flight, and a refused write surfaces an
+  // alert instead of silently reverting — the recovery re-read would otherwise
+  // erase the field on screen without the user knowing why. No auto-retry:
+  // re-applying could clobber a concurrent edit.
+  //
+  // Takes a list because the smart-classifier pickers commit as a group
+  // (provider → model → effort): one write per changed field, in order, and
+  // the first refusal stops the run and reports it.
+  const commitFields = async (entries: readonly (readonly [keyof Config, unknown])[]): Promise<void> => {
+    if (entries.length === 0) return
     setSaveFailed(false)
-    setBusy(prev => new Set(prev).add(field))
+    const fields = entries.map(([field]) => field)
+    setBusy((prev) => { const next = new Set(prev); for (const field of fields) next.add(field); return next })
     try {
-      if (!await form.set(field, next)) setSaveFailed(true)
+      for (const [field, next] of entries) {
+        if (!await form.set(field, next)) { setSaveFailed(true); return }
+      }
     } finally {
-      setBusy(prev => { const rest = new Set(prev); rest.delete(field); return rest })
+      setBusy((prev) => { const rest = new Set(prev); for (const field of fields) rest.delete(field); return rest })
     }
   }
+  const commitField = (field: keyof Config, next: unknown): Promise<void> => commitFields([[field, next]])
 
   // SandboxDefaults is a single field; each mode row edits a sub-key.
   const setSandboxMode = (mode: 'request' | 'auto-edit' | 'smart' | 'yolo', sandboxMode: string): void => {
@@ -263,21 +299,94 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
     if (next !== value.askReason) { void commitField('askReason', next) }
   }
 
-  // smartProvider/smartModel are single-line inputs. Same live-commit hazard
-  // as askReason above: committing on every keystroke round-trips through the
-  // settings form and snaps the caret to the end mid-typing (fast typing can
-  // even drop characters). Hold each draft locally and commit on blur.
-  const [smartProviderText, setSmartProviderText] = useState(value.smartProvider ?? '')
-  useEffect(() => { setSmartProviderText(value.smartProvider ?? '') }, [value.smartProvider])
-  const commitSmartProvider = (next: string): void => {
-    const normalized = next === '' ? null : next
-    if (normalized !== value.smartProvider) { void commitField('smartProvider', normalized) }
+  // ── Smart classifier pickers ──────────────────────────────────────────────
+  // The catalogue is a Host fact, not a settings value (see model-directory.ts):
+  // it loads on the first render of this page, reloads when adapters or model
+  // listings change, and drops on reconnect. `ensure()` only acts while idle,
+  // so this effect costs one call per page visit and never retries in a loop.
+  const catalog = useSyncExternalStore(
+    (cb) => directory.subscribe(cb),
+    () => directory.getSnapshot(),
+  )
+  useEffect(() => { directory.ensure() }, [directory, catalog.status])
+
+  const catalogReady = catalog.status === 'ready'
+  const providerGroup: SmartCatalogGroup | undefined = value.smartProvider === null
+    ? undefined
+    : catalog.groups.find(group => group.id === value.smartProvider)
+  const selectedModel = providerGroup?.models.find(entry => entry.id === value.smartModel)
+  const efforts = selectedModel?.reasoning?.efforts ?? []
+
+  // Trigger labels stay short; menu rows carry the longer explanation, since
+  // the menu is wider than the trigger pill.
+  const inheritLabel = t('smartClassifier.inherit')
+  const inheritMenuLabel = catalog.defaultProvider === undefined || catalog.defaultModel === undefined
+    ? inheritLabel
+    : `${inheritLabel} · ${t('smartClassifier.hostDefaultLabel')}: ${catalog.defaultProvider} / ${catalog.defaultModel}`
+
+  const providerItems: { id: string; label: string }[] = [
+    { id: '', label: inheritMenuLabel },
+    ...catalog.groups.map(group => ({ id: group.id, label: group.name })),
+  ]
+  // A stored provider the Host no longer advertises stays visible so the
+  // configured value is never silently rewritten to look like something else.
+  if (value.smartProvider !== null && catalogReady && providerGroup === undefined) {
+    providerItems.push({ id: value.smartProvider, label: `${value.smartProvider} · ${t('smartClassifier.outOfCatalog')}` })
   }
-  const [smartModelText, setSmartModelText] = useState(value.smartModel ?? '')
-  useEffect(() => { setSmartModelText(value.smartModel ?? '') }, [value.smartModel])
-  const commitSmartModel = (next: string): void => {
-    const normalized = next === '' ? null : next
-    if (normalized !== value.smartModel) { void commitField('smartModel', normalized) }
+
+  const modelItems: { id: string; label: string }[] = (providerGroup?.models ?? [])
+    .map(entry => ({ id: entry.id, label: entry.name }))
+  if (value.smartModel !== null && catalogReady && !modelItems.some(item => item.id === value.smartModel)) {
+    modelItems.unshift({ id: value.smartModel, label: `${value.smartModel} · ${t('smartClassifier.outOfCatalog')}` })
+  }
+
+  const effortItems: { id: string; label: string }[] = [
+    { id: '', label: t('smartClassifier.modelDefault') },
+    ...efforts.map(effort => ({ id: effort.id, label: effort.name })),
+  ]
+  if (value.smartReasoningEffort !== null && catalogReady && !effortItems.some(item => item.id === value.smartReasoningEffort)) {
+    effortItems.push({ id: value.smartReasoningEffort, label: `${value.smartReasoningEffort} · ${t('smartClassifier.outOfCatalog')}` })
+  }
+
+  // Commit the three related fields as one group, writing only what changed.
+  const commitSmartSelection = (next: { provider?: string | null; model?: string | null; effort?: string | null }): void => {
+    const entries: (readonly [keyof Config, unknown])[] = []
+    if (next.provider !== undefined && next.provider !== value.smartProvider) entries.push(['smartProvider', next.provider])
+    if (next.model !== undefined && next.model !== value.smartModel) entries.push(['smartModel', next.model])
+    if (next.effort !== undefined && next.effort !== value.smartReasoningEffort) entries.push(['smartReasoningEffort', next.effort])
+    void commitFields(entries)
+  }
+
+  /** Effort ids a model advertises inside one provider group. */
+  const effortIdsIn = (group: SmartCatalogGroup | undefined, model: string | null): ReadonlySet<string> => new Set(
+    (model === null ? [] : group?.models.find(entry => entry.id === model)?.reasoning?.efforts ?? [])
+      .map(effort => effort.id),
+  )
+
+  // Provider and model are coupled: "inherit" is all-or-nothing, so picking a
+  // concrete provider selects a model it actually advertises, and picking
+  // "inherit" clears all three. An effort survives only while the same model
+  // remains selected and still advertises it.
+  const changeProvider = (next: string): void => {
+    if (next === '') {
+      commitSmartSelection({ provider: null, model: null, effort: null })
+      return
+    }
+    const group = catalog.groups.find(entry => entry.id === next)
+    const keepsModel = value.smartModel !== null && group?.models.some(entry => entry.id === value.smartModel) === true
+    const model = keepsModel ? value.smartModel : group?.models[0]?.id ?? null
+    const keepsEffort = keepsModel && value.smartReasoningEffort !== null
+      && effortIdsIn(group, model).has(value.smartReasoningEffort)
+    commitSmartSelection({ provider: next, model, effort: keepsEffort ? value.smartReasoningEffort : null })
+  }
+
+  const changeModel = (next: string): void => {
+    const keepsEffort = value.smartReasoningEffort !== null && effortIdsIn(providerGroup, next).has(value.smartReasoningEffort)
+    commitSmartSelection({ model: next, effort: keepsEffort ? value.smartReasoningEffort : null })
+  }
+
+  const changeEffort = (next: string): void => {
+    commitSmartSelection({ effort: next === '' ? null : next })
   }
 
   return (
@@ -455,6 +564,16 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
       <div className={css.subSection}>
         <h3 className={css.subSectionHeader}>{t('section.smartClassifier')}</h3>
         <div className={css.subSectionBody}>
+          {(catalog.status === 'loading' || catalog.status === 'error') && (
+            <p className={css.catalogStatus} role={catalog.status === 'error' ? 'alert' : undefined}>
+              {catalog.status === 'error' ? t('smartClassifier.loadError') : t('smartClassifier.loading')}
+              {catalog.status === 'error' && (
+                <button type="button" className={css.retry} onClick={() => { directory.refresh() }}>
+                  {t('smartClassifier.retry')}
+                </button>
+              )}
+            </p>
+          )}
           <FieldShell
             label={t('field.smartProvider')}
             descKey="desc.smartProvider"
@@ -462,13 +581,12 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
             onReset={() => { reset('smartProvider') }}
             resetLabel={t('reset.label')}
           >
-            <Input
-              value={smartProviderText}
-              placeholder={t('smartClassifier.provider.placeholder')}
-              className={css.csvInput}
-              disabled={busy.has('smartProvider')}
-              onChange={(e) => { setSmartProviderText(e.target.value) }}
-              onBlur={(e) => { commitSmartProvider(e.target.value) }}
+            <EnumDropdown
+              value={value.smartProvider ?? ''}
+              items={providerItems}
+              resolveLabel={(id) => id === '' ? inheritLabel : id}
+              disabled={!catalogReady || busy.has('smartProvider')}
+              onChange={changeProvider}
             />
           </FieldShell>
           <FieldShell
@@ -478,13 +596,27 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
             onReset={() => { reset('smartModel') }}
             resetLabel={t('reset.label')}
           >
-            <Input
-              value={smartModelText}
-              placeholder={t('smartClassifier.model.placeholder')}
-              className={css.csvInput}
-              disabled={busy.has('smartModel')}
-              onChange={(e) => { setSmartModelText(e.target.value) }}
-              onBlur={(e) => { commitSmartModel(e.target.value) }}
+            <EnumDropdown
+              value={value.smartModel ?? ''}
+              items={modelItems}
+              resolveLabel={() => value.smartModel ?? t('smartClassifier.modelInherited')}
+              disabled={value.smartProvider === null || !catalogReady || busy.has('smartModel')}
+              onChange={changeModel}
+            />
+          </FieldShell>
+          <FieldShell
+            label={t('field.smartReasoningEffort')}
+            descKey="desc.smartReasoningEffort"
+            t={t}
+            onReset={() => { reset('smartReasoningEffort') }}
+            resetLabel={t('reset.label')}
+          >
+            <EnumDropdown
+              value={value.smartReasoningEffort ?? ''}
+              items={effortItems}
+              resolveLabel={(id) => id === '' ? t('smartClassifier.modelDefault') : id}
+              disabled={value.smartModel === null || efforts.length === 0 || busy.has('smartReasoningEffort')}
+              onChange={changeEffort}
             />
           </FieldShell>
         </div>

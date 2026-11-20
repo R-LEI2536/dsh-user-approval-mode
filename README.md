@@ -452,7 +452,8 @@ a security boundary. Concretely:
   shell command costs one LLM call; repeats within the TTL are free.
   If the user left `smartProvider`/`smartModel` blank and the host
   defaults to the conversation's main model, those calls run on the
-  same model as the conversation — pick a lighter model to reduce cost.
+  same model as the conversation — pick a lighter model (and a lower
+  reasoning effort, where the model offers a choice) to reduce cost.
 - **Concurrency is bounded by `smartSessionMemory`.** The memory is
   per-session and FIFO at 200 entries; a long session will cycle out
   older approvals and re-pay the LLM cost for them.
@@ -639,8 +640,9 @@ override (so the deployer's base re-emerges).
 | `readOnlyGitCommands` | switch | Allow a strictly-parsed read-only command — or a chain of them, plus `echo "…"` lines — without prompting (default on) |
 | `sandboxDefaults` | per-mode dropdown | Sandbox policy when switching into each mode |
 | `askReason` | textarea | Approval dialog template (placeholders: `{tool}` / `{mode}` / `{family}`) |
-| `smartProvider` | text | LLM provider route for the smart classifier (leave empty to inherit host default) |
-| `smartModel` | text | LLM model id for the smart classifier (leave empty to inherit host default) |
+| `smartProvider` | dropdown | LLM provider for the smart classifier, chosen from the models this host advertises (`Inherit host default` leaves it on `agentDefaultModel`) |
+| `smartModel` | dropdown | LLM model for the smart classifier, limited to the selected provider's advertised models |
+| `smartReasoningEffort` | dropdown | Reasoning effort for the classifier call, offered only by models that advertise efforts (`Model default` leaves the option unset) |
 
 Deployer-only (not shown in the page; set in `cordis.yml`):
 
@@ -655,9 +657,18 @@ Deployer-only (not shown in the page; set in `cordis.yml`):
 
 ### Effect timing
 
-The nine user-editable fields are **live** — they take effect on the next
+The ten user-editable fields are **live** — they take effect on the next
 `tools/pre-execute` invocation, no DSH restart required. The runtime gate
 re-reads the live volatile Config on every tool call.
+
+The smart-classifier pickers read the host model catalogue
+(`session/modelCatalog`) on the page's first render and reload it when the LLM
+registry changes or the connection resets; a stored route the host no longer
+advertises stays visible, labelled as outside the current catalogue, instead of
+being silently rewritten. Provider and model are coupled: choosing a provider
+selects a model it advertises, and `Inherit host default` clears all three
+fields. An effort is kept only while the same model stays selected and still
+advertises it.
 
 ### Overlap between family lists
 
@@ -747,8 +758,9 @@ You can customize the plugin behavior in your agent preset:
 | `readOnlyGitCommands` | boolean | `true` | Allow a strictly-parsed read-only command chain instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
 | `askReason` | string | `[{family}] Tool: {tool} \| Mode: {mode}` | Message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders. The default ships bilingual (zh UIs show a built-in zh variant; logs keep English); a custom template displays verbatim |
-| `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`) |
-| `smartModel` | string \| null | `null` | LLM model for the smart-mode classifier (null = inherit `agentDefaultModel`) |
+| `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`). The settings page offers the host's advertised providers; a deployer may still pin one here |
+| `smartModel` | string \| null | `null` | LLM model for the smart-mode classifier (null = inherit `agentDefaultModel`). The settings page offers the selected provider's advertised models |
+| `smartReasoningEffort` | string \| null | `null` | Reasoning effort for one classifier call (null = omit the option, so the model's default effort applies). An effort the model does not accept makes the call fail, and the classifier falls back to manual review |
 
 The `Default` column lists the plugin's schema defaults (`src/index.ts`); the
 shipped bundle patch repeats them verbatim, so a bundle install and a manual

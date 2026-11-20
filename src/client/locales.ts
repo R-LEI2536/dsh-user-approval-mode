@@ -62,6 +62,7 @@ export const enPage = {
   'field.askReason': 'Approval prompt text',
   'field.smartProvider': 'Provider',
   'field.smartModel': 'Model',
+  'field.smartReasoningEffort': 'Reasoning effort',
 
   // Field descriptions (rendered in ?-icon tooltips)
   'desc.editTools': 'Tools classified as the "edit" family — file modifications. Auto-approved under auto-edit mode.',
@@ -71,8 +72,9 @@ export const enPage = {
   'desc.readOnlyGitCommands': 'Auto-allow a strictly-parsed read-only command instead of prompting under request, auto-edit, and smart: a single git status / git log / git diff, the same commands chained with &&, ; or |, and echo "=== x ===" decoration lines. Redirection (>, 2>&1), quoted git arguments, and anything that writes still ask.',
   'desc.sandbox': 'Sandbox policy the plugin writes when switching into each mode. The "off" mode restores the composition default instead.',
   'desc.askReason': 'Template shown in the approval dialog. Placeholders: {tool} (tool name), {mode} (current approval mode), {family} (edit | shell | readonly | other). The default is bilingual: a zh UI shows the zh variant via the host displayReason channel while logs keep the English text; a custom template always displays verbatim. For a PTC program\'s inner tool calls the plugin appends a short argument summary, because the host dialog cannot show those arguments.',
-  'desc.smartProvider': 'LLM provider for the smart-mode shell classifier. Leave empty to inherit the host default model.',
-  'desc.smartModel': 'LLM model id for the smart-mode shell classifier. Leave empty to inherit the host default model. A lighter model reduces per-shell-call cost.',
+  'desc.smartProvider': 'LLM provider for the smart-mode shell classifier, chosen from the models this host currently advertises. "Inherit host default" leaves the classifier on the host default-model selection.',
+  'desc.smartModel': 'LLM model for the smart-mode shell classifier, limited to the selected provider\'s advertised models. A lighter model reduces per-shell-call cost.',
+  'desc.smartReasoningEffort': 'Reasoning effort for the classifier call, offered only by models that advertise efforts. "Model default" leaves the option unset. A lighter effort lowers each call\'s latency and cost.',
 
   // Sandbox dropdown options (English form, same in en + zh — these are
   // technical identifiers that match the schema values).
@@ -84,9 +86,17 @@ export const enPage = {
   // order is irrelevant and duplicates are folded on commit.
   'csv.placeholder': '{write, edit, str_replace_editor}',
 
-  // Smart classifier provider/model placeholders.
-  'smartClassifier.provider.placeholder': 'e.g. deepseek-official',
-  'smartClassifier.model.placeholder': 'e.g. deepseek-chat',
+  // Smart classifier pickers (inherit entry, catalog-outside annotation,
+  // catalog load states). The trigger shows the short form; the menu item may
+  // carry a longer label because the menu is wider than the trigger.
+  'smartClassifier.inherit': 'Inherit host default',
+  'smartClassifier.hostDefaultLabel': 'Host default',
+  'smartClassifier.outOfCatalog': 'not in the current catalog',
+  'smartClassifier.modelDefault': 'Model default',
+  'smartClassifier.modelInherited': 'Inherited with the provider',
+  'smartClassifier.loading': 'Loading model catalog…',
+  'smartClassifier.loadError': 'Model catalog unavailable; the saved values are kept.',
+  'smartClassifier.retry': 'Retry',
 
   // Reset button (always visible per field)
   'reset.label': 'Reset',
@@ -124,6 +134,7 @@ export const zhPage = {
   'field.askReason': '审批弹窗文案',
   'field.smartProvider': 'Provider',
   'field.smartModel': 'Model',
+  'field.smartReasoningEffort': 'Reasoning 档位',
 
   // Field descriptions
   'desc.editTools': '归为「编辑族」的工具——文件修改类。在 auto-edit 模式下自动放行。',
@@ -133,8 +144,9 @@ export const zhPage = {
   'desc.readOnlyGitCommands': '在 request / auto-edit / smart 模式下，严格解析后的只读命令直接放行：单条 git status / git log / git diff、用 && / ; / | 串起来的同样命令，以及 echo "=== x ===" 这类装饰行。重定向（>、2>&1）、带引号的 git 参数和任何写操作仍会弹窗。',
   'desc.sandbox': '切到每个模式时插件联动写入的 sandbox 策略。off 模式则恢复为组合默认 sandbox。',
   'desc.askReason': '审批弹窗里显示的文案模板。占位符：{tool}（工具名）、{mode}（当前审批模式）、{family}（edit | shell | readonly | other）。默认模板自带双语：中文 UI 经宿主 displayReason 通道显示中文版，日志仍记英文；自定义模板则单语原样显示。PTC 程序内的工具子调用会额外追加一段参数摘要，因为宿主弹窗无法显示这些参数。',
-  'desc.smartProvider': 'smart 模式 shell 分类器使用的 LLM provider。留空则继承宿主默认模型。',
-  'desc.smartModel': 'smart 模式 shell 分类器使用的模型 id。留空则继承宿主默认模型；选轻量模型可降低每次 shell 调用的成本。',
+  'desc.smartProvider': 'smart 模式 shell 分类器使用的 LLM provider，从宿主当前公布的模型目录里选。选「继承宿主默认」则跟随宿主默认模型。',
+  'desc.smartModel': 'smart 模式 shell 分类器使用的模型，只列所选 provider 公布的模型。选轻量模型可降低每次 shell 调用的成本。',
+  'desc.smartReasoningEffort': '分类器调用使用的 reasoning 档位，仅模型公布档位时可选。选「模型默认」则不下传该选项。轻档位能降低单次调用的延迟与成本。',
 
   // Sandbox dropdown options — same English form as en, since these are
   // technical identifiers that match the schema values.
@@ -146,9 +158,16 @@ export const zhPage = {
   // language-neutral).
   'csv.placeholder': '{write, edit, str_replace_editor}',
 
-  // Smart classifier placeholders (English form, technical identifiers).
-  'smartClassifier.provider.placeholder': 'e.g. deepseek-official',
-  'smartClassifier.model.placeholder': 'e.g. deepseek-chat',
+  // Smart classifier 选择器（继承项、目录外标注、目录加载状态）。触发器显示
+  // 短文案，菜单项可以更长，因为菜单比触发器宽。
+  'smartClassifier.inherit': '继承宿主默认',
+  'smartClassifier.hostDefaultLabel': '宿主当前默认',
+  'smartClassifier.outOfCatalog': '不在当前目录中',
+  'smartClassifier.modelDefault': '模型默认',
+  'smartClassifier.modelInherited': '随 provider 一起继承',
+  'smartClassifier.loading': '正在加载模型目录…',
+  'smartClassifier.loadError': '模型目录不可用；已保存的值保持不变。',
+  'smartClassifier.retry': '重试',
 
   // Reset button
   'reset.label': '重置',

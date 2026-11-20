@@ -39,11 +39,13 @@ interface HarnessOptions {
   sessionEvents?: readonly unknown[]
 }
 
+type SelectionStub = { provider: string; model: string; reasoningEffort?: string }
+
 interface Harness {
-  evaluate: (exec: ExecStub) => Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; label?: string; selection?: { provider: string; model: string } }>
+  evaluate: (exec: ExecStub) => Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; label?: string; selection?: SelectionStub }>
   memory: SmartSessionMemory
   streamCalls: number
-  lastSelection: { provider: string; model: string } | undefined
+  lastSelection: SelectionStub | undefined
   lastEvidence: { toolName?: string; command?: string | null; toolArguments?: string | null } | undefined
 }
 
@@ -56,6 +58,7 @@ const baseConfig: SmartEvaluatorConfig = {
   smartClassifierPrompt: 'mock prompt',
   smartProvider: 'mock-provider',
   smartModel: 'mock-model',
+  smartReasoningEffort: null,
   readOnlyGitCommands: true,
 }
 
@@ -85,7 +88,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   const lifetimeSignal = options.lifetimeSignal ?? new AbortController().signal
 
   const streamCalls = { value: 0 }
-  const lastSelectionRef: { value: { provider: string; model: string } | undefined } = { value: undefined }
+  const lastSelectionRef: { value: SelectionStub | undefined } = { value: undefined }
   const lastEvidenceRef: { value: Harness['lastEvidence'] } = { value: undefined }
   const factory = options.streamFactory ?? (() => textStream('{"verdict":"approve"}'))
 
@@ -94,7 +97,11 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     : {
         stream(options2) {
           streamCalls.value += 1
-          lastSelectionRef.value = { provider: options2.provider, model: options2.model }
+          lastSelectionRef.value = {
+            provider: options2.provider,
+            model: options2.model,
+            ...options2.reasoningEffort === undefined ? {} : { reasoningEffort: options2.reasoningEffort },
+          }
           try {
             const message = options2.messages[0]
             const firstBlock = message?.content?.[0]
@@ -137,7 +144,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     evaluate: async (exec) => evaluator(
       { name: exec.name, arguments: exec.arguments },
       sessionStub as never,
-    ) as unknown as Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; label?: string; selection?: { provider: string; model: string } }>,
+    ) as unknown as Promise<{ kind: 'allow' | 'ask'; source?: string; detail?: string; label?: string; selection?: SelectionStub }>,
     memory,
     get streamCalls() { return streamCalls.value },
     get lastSelection() { return lastSelectionRef.value },
@@ -410,6 +417,23 @@ test('evaluator: classifier ask verdict carries the host-default fallback model'
   const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'ls' } })
   assert.equal(verdict.kind, 'ask')
   assert.deepEqual(verdict.selection, { provider: 'fallback-provider', model: 'fallback-model' })
+})
+
+test('evaluator: a configured reasoning effort rides the stream options and the verdict selection', async () => {
+  const h = makeHarness({ configOverrides: { smartReasoningEffort: 'high' } })
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'npm test' } })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(h.lastSelection?.reasoningEffort, 'high')
+  // The verdict carries the same effort so the host's decision line can show it.
+  assert.deepEqual(verdict.selection, { provider: 'mock-provider', model: 'mock-model', reasoningEffort: 'high' })
+})
+
+test('evaluator: no configured effort leaves the stream option and the selection absent', async () => {
+  const h = makeHarness()
+  const verdict = await h.evaluate({ name: 'bash', arguments: { command: 'npm test' } })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(h.lastSelection?.reasoningEffort, undefined, 'the stream options must not carry an effort key')
+  assert.deepEqual(verdict.selection, { provider: 'mock-provider', model: 'mock-model' })
 })
 
 test('evaluator: short-circuit verdicts carry no model selection', async () => {

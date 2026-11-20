@@ -66,7 +66,10 @@
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
-.subSectionBody .field:first-child {
+/* The first field of a card carries no hairline. `:first-of-type` rather than
+   `:first-child` so a catalogue status line above the fields (a `<p>`) does not
+   push a stray border onto the provider row. */
+.subSectionBody > .field:first-of-type {
   border-top: none;
 }
 
@@ -108,14 +111,6 @@
 
 .control {
   display: flex;
-}
-
-/* Width applied via className passed to the Input primitive (its root
-   element picks up this class). The smart-classifier provider/model inputs
-   stretch to fill the card's content area instead of leaving empty space on
-   the right. */
-.csvInput {
-  width: 100%;
 }
 
 /* Tool-family list. Skin matches this page's own .textarea (the approval
@@ -199,6 +194,49 @@
 
 .open .dropdownChevron {
   transform: rotate(180deg);
+}
+
+/* Long provider/model ids truncate inside the fixed-width pill; the full
+   value stays reachable through the trigger's title attribute. */
+.dropdownValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropdownTrigger:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.dropdownTrigger:disabled:hover {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+/* Model-catalogue load state for the smart-classifier pickers: one quiet line
+   above the fields, with an inline retry when the read failed. */
+.catalogStatus {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.retry {
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.retry:hover {
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Multi-line approval-prompt template. */

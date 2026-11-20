@@ -91,6 +91,8 @@ export interface Config {
     smartProvider?: string | null;
     /** Smart 分类器使用的 LLM model。null = 继承 host 默认。 */
     smartModel?: string | null;
+    /** Smart 分类器调用的 reasoning 档位。null = 不传该选项，由模型自身默认档位决定。 */
+    smartReasoningEffort?: string | null;
     /** 追加到内置 13 条危险清单之后的正则；命中直接转人工。 */
     smartExtraDangerPatterns?: string[];
     /** 整组替换内置 13 条危险清单。`null`（默认）保留内置；非 null 数组完全替换。 */
@@ -105,7 +107,7 @@ export interface Config {
     smartClassifierPrompt?: string;
 }
 /**
- * 运行时 Config：9 个设置页可编辑字段包在 `Volatile<T>` 引用里（live，随 profile
+ * 运行时 Config：10 个设置页可编辑字段包在 `Volatile<T>` 引用里（live，随 profile
  * user 层更新），其余 8 个部署方-only 字段为启动时定值的普通值。类型镜像
  * `Config` schema（含 `.volatile()` 链）的校验输出，apply 按此形状读配置。
  */
@@ -121,6 +123,7 @@ export interface VolatileConfig {
     askReason: Volatile<string>;
     smartProvider: Volatile<string | null>;
     smartModel: Volatile<string | null>;
+    smartReasoningEffort: Volatile<string | null>;
     smartExtraDangerPatterns: string[];
     smartDangerPatterns: string[] | null;
     smartSessionMemory: boolean;
