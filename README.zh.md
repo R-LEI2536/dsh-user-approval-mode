@@ -207,11 +207,23 @@ Web UI 状态独立管理，刷新时从服务器同步：
 **v0.15.0+ 要求 DSH ≥ 0.2.1-rc.2（按 0.2.2-rc.3 验证）**：
 
 依赖线与 0.14.0 完全相同——peer 下限、dev 钉与实算的兼容门都没动，下方
-条目仍描述安装面。0.15.0 变的是审批弹窗文案：默认模板重构为
-`[{family}] Tool: {tool} | Mode: {mode}`，并经宿主 `displayReason` 通道自带
-双语（zh UI 显示内置中文版）——该通道自 peer 下限 0.2.1-rc.2 起所有宿主都
-支持。按静态验证交付（`pnpm typecheck`、141 个测试、`pnpm build`），面对
-真实的 `0.2.2-rc.3` 类型。
+0.13.0 条目仍描述安装面，只多一条：`acorn` 现在是运行时依赖（`run_code`
+代码结构门禁的解析器），随包安装。0.15.0 有三处变化：
+
+- **审批问询文案重构并自带双语。** 默认模板为
+  `[{family}] Tool: {tool} | Mode: {mode}`，经宿主 `displayReason` 通道
+  显示（peer 下限 0.2.1-rc.2 起的宿主都支持），zh UI 显示内置中文版，
+  会话日志保留英文。
+- **顶层 `run_code` 程序按其代码结构分类。** 纯 `tools.*` 与已识别的纯
+  计算/控制流程序放行到子调用门禁；其余程序在 request/auto-edit 下弹窗并
+  附带 `[code: …]` 摘要；smart 模式下已识别的判定在危险名单之后快速放行。
+- **smart 模式的分类器模型改从宿主模型目录选择。** provider/model/effort
+  三行改为宿主 `session.modelCatalog()` 驱动的下拉框，新增的
+  `smartReasoningEffort` 字段随分类调用下发。
+
+两点说明：`0.2.2-rc.3` 的验证继承自 0.13.0（依赖线完全一致），且 0.15.0 本身
+没有跑 typecheck、测试或构建。改动本身记录在 CHANGELOG，代码结构边界钉在
+`test/run-code-gate.test.ts`。
 
 **v0.14.0+ 要求 DSH ≥ 0.2.1-rc.2（按 0.2.2-rc.3 验证）**：
 

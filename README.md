@@ -166,13 +166,27 @@ For technical details, see [`docs/2026-08-20-plugin-event-compatibility-issue.md
 **v0.15.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.3)**:
 
 Same dependency line as 0.14.0 — the peer floor, dev pins and the measured
-compatibility gate are unchanged, so the entries below still describe the
-install surface. What moves in 0.15.0 is the approval-prompt copy: the
-default template is restructured (`[{family}] Tool: {tool} | Mode: {mode}`)
-and ships bilingual through the host `displayReason` channel, which every
-host from the 0.2.1-rc.2 peer floor onward supports. Verified statically
-(`pnpm typecheck`, 141 tests, `pnpm build`) against the real `0.2.2-rc.3`
-types.
+compatibility gate are unchanged, so the 0.13.0 entry below still describes
+the install surface, with one addition: `acorn` is now a runtime dependency
+(the parser behind the `run_code` code-structure gate), installed with the
+bundle. Three things move in 0.15.0:
+
+- **The approval ask is restructured and bilingual.** The default template is
+  `[{family}] Tool: {tool} | Mode: {mode}` and rides the host `displayReason`
+  channel, which every host from the 0.2.1-rc.2 peer floor supports; a zh UI
+  shows the built-in Chinese copy while the session log keeps English.
+- **A top-level `run_code` program is classified by its code structure.**
+  Tools-only and recognized pure programs pass to the sub-call gate, any other
+  program asks under request/auto-edit with a `[code: …]` summary, and smart
+  mode fast-allows the recognized verdicts after the danger list.
+- **Smart mode's classifier route is picked from the host catalogue.**
+  Provider/model/effort are pickers fed by `session.modelCatalog()`, and the
+  new `smartReasoningEffort` field rides the classifier call.
+
+Two caveats: the `0.2.2-rc.3` verification is inherited from 0.13.0 (the
+dependency line is identical), and no typecheck, test or build run was executed
+for 0.15.0. The changes themselves are recorded in the CHANGELOG, and the
+code-structure boundary is pinned in `test/run-code-gate.test.ts`.
 
 **v0.14.0+ requires DSH ≥ 0.2.1-rc.2 (verified against 0.2.2-rc.3)**:
 
