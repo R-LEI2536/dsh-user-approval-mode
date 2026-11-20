@@ -32,24 +32,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PTC preset: the top-level `run_code` call is now classified by its
   program's code structure** (ADR 0004 revision). `run_code` stays in
   `autoAllowTools`, but before that allow takes effect the gate parses the
-  program with the new `acorn` dependency and applies a strict syntax
-  whitelist (`src/run-code-gate.ts`): a program whose every statement is a
+  program with the new `acorn` dependency and applies a two-width syntax
+  gate (`src/run-code-gate.ts`): a program whose every statement is a
   `tools.*` call, a variable receiving one, or a `return` of trusted values
   is allowed through to the sub-call gate (each sub-call already re-enters
-  the gate under its real tool name); any other JS — arithmetic, branching,
-  imports, dynamic member access, or unparseable code — prompts under
+  the gate under its real tool name); the widened grammar — call-free pure
+  expressions (arithmetic, comparisons, template assembly, literal-index
+  reads), recognized control flow (`if` / `for` / `while` / `switch` /
+  `try` with tests and bodies recursively checked, local assignment for
+  loop counters), and a written-down list of pure builtin functions and
+  methods (`Object.keys`, `Math.max`, `.map` / `.filter` / `.slice` /
+  `.sort`, `JSON.parse`, …) whose callback bodies are checked the same way
+  (`list.map(x => rmSync('./x'))` prompts) — passes too while the new
+  `runCodePureExpressions` switch is on (default; the settings page
+  restores the strict grammar). A `tools.*` sub-call stays gated wherever
+  it hides, and a program that binds the name `tools` anywhere asks as a
+  whole. Any other JS — imports, any call not on the written-down lists,
+  `new`, dynamic member access, or unparseable code — prompts under
   request and auto-edit. This closes the silent-`rmSync` hole where a
-  program with zero tool calls executed without any prompt.
+  program with zero tool calls executed
+  without any prompt. Every gate allow logs one greppable line,
+  `[dsh-user-approval[run-code-gate]] decision=allow detail=<verdict>`.
 - **Top-level `run_code` prompts carry a `[code: …]` summary.** The host
   approval dialog renders no command block for `run_code`, so a top-level
   ask appends the program text (whitespace-collapsed, capped at 200
   characters) after the usual ask copy, bilingual through the same
   `displayReason` channel as the default template.
-- **Smart mode routes the program text through the five-step pipeline.**
+- **Smart mode routes the program text through the five-step pipeline, with
+  the same code-structure verdict as a fast-allow inside it.**
   `commandFromArguments` gains a `run_code` branch (the program's `code`
-  string becomes the classifier's command and the session-memory key), so
-  smart keeps its danger-list / memory / LLM / fail-safe semantics for
-  programs; smart does not use the whitelist.
+  string becomes the classifier's command and the session-memory key), and
+  the verdict fast-allows positioned like the read-only git fast-path:
+  after the danger list (a configured pattern can never be bypassed by the
+  grammar), before memory and the LLM. A recognized program needs no LLM
+  call and its source never leaves the machine; unrecognized programs fall
+  through to memory / LLM / fail-safe unchanged.
 
 ### Changed
 
@@ -60,8 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advertises it. The server-side schema keeps the three fields independent, so
   a deployer may still pin them separately in `cordis.yml`.
 - The bundled `dsh-approval-shell-style` skill's PTC contract section now
-  states the code-structure rule: a top-level program passes only when it is
-  pure `tools.*` calls, and a direct `node:fs` / `node:child_process` import
+  states the code-structure rule: a top-level program passes when it is
+  pure `tools.*` calls or recognized pure computation, control flow, or
+  whitelisted methods, and a direct
+  `node:fs` / `node:child_process` import
   stops the program at a top-level prompt under the strict modes instead of
   running silently. The double prompt (top-level code ask plus per-sub-call
   asks for mixed programs) is documented as the accepted cost; merging the
@@ -104,18 +123,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
-- `test/run-code-gate.test.ts` (new) pins the whitelist boundary itself:
-  the tools-only shapes that pass, the JS shapes that ask (pure computation,
-  branching, imports, computed member access, ambient `process` /
-  `globalThis`, chaining off a tool call, unparseable code), and the
+- `test/run-code-gate.test.ts` (new) pins the grammar boundary itself:
+  the strict tools-only shapes, the widened pure-expression shapes, the
+  shapes that ask (branching, imports, any non-`tools` call, dynamic member
+  access, ambient `process` / `globalThis`, chaining off a tool call,
+  unparseable code), the `runCodePureExpressions` switch semantics, and the
   `[code: …]` preview collapse/cap behavior.
 - `test/gate-ptc.test.ts` covers both Unreleased features: the askReason
   matrix (new default format, bilingual `displayReason` carrying the same
   suffixes, custom template staying single-language) and the new top-level
-  program matrix (tools-only allow in the non-smart modes, non-tools ask
-  with `[code: …]`, yolo/off allow, smart danger-list and
+  program matrix (tools-only and pure allows with their gate logs in every
+  gated mode, the width switch restoring the strict grammar, non-grammar
+  ask with `[code: …]`, yolo/off allow, smart danger-list and
   `llm-unavailable` fallbacks with the code as command), plus the
   double-prompt pin, the missing-code fail-safe, and preview capping.
+- `test/smart-shell-evaluator.test.ts` pins the smart integration: the
+  fast-allow before the LLM (streamCalls stays 0 for recognized programs),
+  the danger list winning over the grammar, the width switch, and
+  unrecognized programs falling through to the classifier.
 
 ## [0.14.0] - 2026-11-20
 

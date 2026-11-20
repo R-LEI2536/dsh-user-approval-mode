@@ -37,6 +37,7 @@ export declare const enPage: {
     'field.readOnlyTools': string;
     'field.autoAllowTools': string;
     'field.readOnlyGitCommands': string;
+    'field.runCodePureExpressions': string;
     'field.sandboxRequest': string;
     'field.sandboxAutoEdit': string;
     'field.smartSandbox': string;
@@ -50,6 +51,7 @@ export declare const enPage: {
     'desc.readOnlyTools': string;
     'desc.autoAllowTools': string;
     'desc.readOnlyGitCommands': string;
+    'desc.runCodePureExpressions': string;
     'desc.sandbox': string;
     'desc.askReason': string;
     'desc.smartProvider': string;
@@ -83,6 +85,7 @@ export declare const zhPage: {
     'field.readOnlyTools': string;
     'field.autoAllowTools': string;
     'field.readOnlyGitCommands': string;
+    'field.runCodePureExpressions': string;
     'field.sandboxRequest': string;
     'field.sandboxAutoEdit': string;
     'field.smartSandbox': string;
@@ -96,6 +99,7 @@ export declare const zhPage: {
     'desc.readOnlyTools': string;
     'desc.autoAllowTools': string;
     'desc.readOnlyGitCommands': string;
+    'desc.runCodePureExpressions': string;
     'desc.sandbox': string;
     'desc.askReason': string;
     'desc.smartProvider': string;

@@ -10,6 +10,12 @@
  *      invocations (plus `echo` decoration lines) auto-approves here, without
  *      touching memory or the LLM (see `read-only-git.ts`). Ordered after the
  *      danger list on purpose.
+ *      For a top-level `run_code` call the code-structure gate fast-allows
+ *      here with the same ordering guarantee (danger list first): a
+ *      tools-only program, and — per the `runCodePureExpressions` switch —
+ *      a recognized pure program, approves deterministically, never
+ *      reaches the LLM, and never exfiltrates the source. Unrecognized
+ *      programs fall through untouched (see `run-code-gate.ts`).
  *   3. Session memory — `sha256(toolName + rawArguments)` key, 30-min TTL,
  *      per-session bounded cache; a hit auto-approves without LLM.
  *   4. LLM classifier — one-shot chat call against `ctx.llm` with the
@@ -27,6 +33,11 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { DEFAULT_SMART_DANGER_PATTERNS } from './smart-danger-patterns.js'
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
 import { matchReadOnlyGitCommand } from './read-only-git.js'
+import {
+  runCodeGateAllows,
+  runCodeGateVerdict,
+  runCodeProgramFromArguments,
+} from './run-code-gate.js'
 
 // ─── Public types ───────────────────────────────────────────────────────────
 
@@ -55,6 +66,10 @@ export interface SmartEvaluatorConfig {
    *  checked after the danger list and before the LLM classifier, so a
    *  configured danger pattern always wins (see `read-only-git.ts`). */
   readonly readOnlyGitCommands: boolean
+  /** Width switch for the run_code code-structure fast-allow: `true`
+   *  (default) also admits call-free pure expressions, `false` keeps the
+   *  strict grammar. The tools-only verdict fast-allows either way. */
+  readonly runCodePureExpressions: boolean
 }
 
 /** The minimum surface we read off `ctx.llm.stream(options)`. Marked
@@ -97,6 +112,7 @@ export interface SmartModelSelection {
 export type SmartShellDecision =
   | { readonly kind: 'allow'; readonly source: 'remembered' | 'classifier'; readonly selection?: SmartModelSelection }
   | { readonly kind: 'allow'; readonly source: 'read-only-git'; readonly label: string }
+  | { readonly kind: 'allow'; readonly source: 'run-code-gate'; readonly label: string }
   | { readonly kind: 'ask'; readonly detail: string; readonly selection?: SmartModelSelection }
 
 /** Factory return type. */
@@ -623,6 +639,25 @@ export function createSmartShellEvaluator(options: {
     if (config.readOnlyGitCommands && command !== undefined) {
       const label = matchReadOnlyGitCommand(command)
       if (label !== undefined) return { kind: 'allow', source: 'read-only-git', label }
+    }
+
+    // run_code code-structure fast-allow. Positioned with the read-only git
+    // fast-path — AFTER the danger list (a configured pattern can never be
+    // bypassed by the grammar) and BEFORE memory / LLM (a recognized program
+    // needs neither, and skipping the LLM keeps the source local). Deliberately
+    // not written to session memory: the parse is cheap and deterministic, and
+    // a remembered entry would only evict something useful from the cache.
+    // An unrecognized program does NOT ask here — it falls through to the
+    // pipeline's later steps, exactly like a command the git fast-path cannot
+    // parse.
+    if (exec.name === 'run_code') {
+      const program = runCodeProgramFromArguments(exec.arguments)
+      if (program !== undefined) {
+        const verdict = runCodeGateVerdict(program)
+        if (runCodeGateAllows(verdict, config.runCodePureExpressions)) {
+          return { kind: 'allow', source: 'run-code-gate', label: verdict }
+        }
+      }
     }
 
     if (lifetimeSignal.aborted) return { kind: 'ask', detail: 'unloaded' }
