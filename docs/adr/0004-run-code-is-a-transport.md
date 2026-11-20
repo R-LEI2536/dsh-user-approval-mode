@@ -160,14 +160,35 @@ The grammar has two widths, both written down in
   identifiers (except the ambient `process` / `globalThis`), non-computed
   member chains, and object/array literals of trusted values. Reading a
   result (`r.lines.length`) is part of a tool call.
-- **Widened** (per the switch): statements may additionally be call-free
-  pure computation over the program's own data — arithmetic, comparisons,
-  conditionals, template assembly, spreads, and member reads with a
-  LITERAL index. Such a program cannot read files, reach the network, or
-  call anything: imports, any call that is not `tools.*`, `new`, tagged
-  templates, dynamic imports, assignment, destructuring, branching, loops,
-  functions, classes, and dynamic member access stay outside BOTH widths
-  and ask.
+- **Widened** (per the switch): statements may additionally be
+  - call-free pure computation over the program's own data — arithmetic,
+    comparisons, conditionals, template assembly, spreads, and member reads
+    with a LITERAL index;
+  - recognized control flow — `if` / `for` / `while` / `switch` / `try`
+    whose tests and bodies are recursively classified against this same
+    grammar (an `rmSync` hiding in a loop body or a callback still asks),
+    with assignment / update allowed only for identifiers the program
+    declares (loop counters; assignment can never reach anything outside
+    the program's own memory);
+  - calls on a written-down list of pure builtin functions and methods
+    (`Object.keys`, `Math.max`, `.map` / `.filter` / `.slice` / `.sort`,
+    `JSON.parse`, …) on pure receivers, where callback bodies go through
+    the same recursive check — `list.map(x => rmSync('./x'))` asks. The
+    list is deliberately closed: `eval`, `fetch`, `setTimeout` & co. are
+    absent, and a name not on the list asks whatever the receiver.
+  A `tools.*` sub-call stays a gated sub-call wherever it hides (a program
+  that binds the name `tools` anywhere — variable, loop binding, catch or
+  callback parameter — asks as a whole, because shadowing would turn
+  would-be gated calls into unguarded plain calls). Imports, any call that
+  is not `tools.*` or on the written-down lists, `new`, tagged templates,
+  dynamic imports, destructuring, dynamic member access, and stray
+  function / class declarations stay outside BOTH widths and ask.
+  The control-flow widening was driven by devweb feedback: a test agent's
+  honest read-only programs (a `for`-of over patterns, an
+  `Object.keys(…).sort()`, an `r.entries.slice(0, 20).map(…)`) all hit the
+  first widening's boundary in one session, which is the noise cost the
+  switch exists to tune — loops and callbacks were added rather than
+  letting every summarizing program prompt.
 
 Costs, accepted explicitly:
 

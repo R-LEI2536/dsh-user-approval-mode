@@ -25,7 +25,7 @@
 - **只读 git 快路径**：严格解析后的只读命令链（`git status`、`git log`、`git diff` 等，用 `&&` `;` `|` 或换行串起来）外加 `echo "…"` 装饰行，在 request / auto-edit / smart 下免审，代理最高频的 shell 调用不再弹窗。设置页有开关（`readOnlyGitCommands`），也可在 `cordis.yml` 里钉 base。
 - **自带 skill**：包内随附 `dsh-approval-shell-style`，代理可以加载它来写「审批友好」的命令（快路径语法、预期的弹窗、被拒后的处理）。插件装着的会话都能在技能目录里看到，卸载插件即消失。
 - **工具族分类**：自动将工具分为编辑、Shell、只读和其他四类
-- **PTC preset 兼容**：agent preset 选 `ptc` 时模型只能直调 `run_code`；插件先按程序代码结构裁决顶层调用（纯 `tools.*` 程序与无调用的纯表达式放行交给子调用闸门，其余 JS 在 request/auto-edit 下弹窗、smart 先快放被识别的程序、其余送分类器），程序内每个 `tools.*` 子调用仍按真实工具名逐个过闸，弹窗里附上代码/命令/路径摘要
+- **PTC preset 兼容**：agent preset 选 `ptc` 时模型只能直调 `run_code`；插件先按程序代码结构裁决顶层调用（纯 `tools.*` 程序、受识别的纯运算/控制流/白名单方法放行交给子调用闸门，其余 JS 在 request/auto-edit 下弹窗、smart 先快放被识别的程序、其余送分类器），程序内每个 `tools.*` 子调用仍按真实工具名逐个过闸，弹窗里附上代码/命令/路径摘要
 - **沙箱集成**：切换模式时自动调整沙箱策略
 - **会话级别**：每个会话维护独立的审批模式
 - **内存状态**：会话级审批模式存储在内存中，重启后恢复默认
@@ -45,7 +45,7 @@
 
 ¹ 例外：严格解析后的只读命令（`git status` / `git log` / `git diff` 这类单条、`echo "…"` 装饰行，或用 `&&` `;` `|` 串起来的组合）在这三个模式下免审直放——见[只读 git 命令](#只读-git-命令)。
 
-**PTC agent preset 下这张表同样成立。** `ptc` preset 只让模型直接调用 `run_code`，其它原生工具只能作为程序内的 `tools.*` 绑定调用。`run_code` 本体先按程序代码结构裁决：整段只有 `tools.*` 调用的程序放行交给子调用闸门，无调用的纯表达式按 `runCodePureExpressions` 开关放行，出现其它 JS 在 request/auto-edit 下弹窗（smart 先快放被识别的程序、其余送分类器，yolo/off 不查）；程序内每个子调用再按上表裁决——request 下的 `write` 子调用要审批，smart 下的 `bash` 子调用走五步流水线，等等。细节与限制见下文「已知限制 → PTC preset」。
+**PTC agent preset 下这张表同样成立。** `ptc` preset 只让模型直接调用 `run_code`，其它原生工具只能作为程序内的 `tools.*` 绑定调用。`run_code` 本体先按程序代码结构裁决：整段只有 `tools.*` 调用的程序放行交给子调用闸门，受识别的纯运算、控制流与白名单方法按 `runCodePureExpressions` 开关放行，出现其它 JS 在 request/auto-edit 下弹窗（smart 先快放被识别的程序、其余送分类器，yolo/off 不查）；程序内每个子调用再按上表裁决——request 下的 `write` 子调用要审批，smart 下的 `bash` 子调用走五步流水线，等等。细节与限制见下文「已知限制 → PTC preset」。
 
 ### 模式详情
 
@@ -315,7 +315,7 @@ agent preset 选 `ptc` 时，模型只能直接调用 `run_code`，其它原生�
 
 - **顶层先看代码。** `run_code` 仍在 `autoAllowTools` 里，但放行之前闸门先检查程序结构。两档语法宽度，姿态与只读 git 快路径一致——只认语法、绝不猜测：
   - **严格档**（永远放行）：整段程序只有 `tools.*` 调用、接结果的变量和 `return`——真正的动作是程序内每个子调用，它们带着 `parent` 和真实的工具名重新进入同一个 `tools/pre-execute` 闸门，按上表裁决。
-  - **宽档**（默认开，设置页一个开关可关）：语句还可以是无调用的纯表达式——算术、比较、模板拼接、对自己已有数据的字面量下标取值。这类代码读不了文件、连不了网、调不了任何东西。import、分支、动态取成员、非 `tools.*` 的任何调用、白名单不认识的写法，request / auto-edit 下仍弹窗审批（`runCodePureExpressions` 关掉即恢复严格档）。
+  - **宽档**（默认开，设置页一个开关可关）：语句还可以是——无调用的纯表达式（算术、比较、模板拼接、字面量下标取值）；受识别的控制流（`if` / `for` / `while` / `switch` / `try`，条件和体递归套用同一套语法，循环体里藏 `rmSync` 照样弹窗），循环计数可赋值给程序自己声明的变量；白名单内建函数与方法（`Object.keys`、`Math.max`、`.map` / `.filter` / `.slice` / `.sort`、`JSON.parse` 等）作用于纯接收者，回调体同样递归检查（`list.map(x => rmSync('./x'))` 弹窗）。`tools.*` 子调用藏在哪都照样逐个过闸，所以受识别的代码读不了文件、连不了网、调不了任何没被识别的东西。import、`new`、动态取成员、遮蔽 `tools` 绑定的声明、不在白名单上的任何调用，request / auto-edit 下仍弹窗审批（`runCodePureExpressions` 关掉即恢复严格档）。
   smart 下同一个裁决是五步流水线内部的快放：排在危险清单之后（部署方配的 pattern 不可被语法绕过）、LLM 之前——被识别的程序不再调 LLM，源码也不会外发给第三方模型；其余照旧走流水线。yolo / off 不检查。每次闸门放行都记一行可 grep 的日志：
   `[dsh-user-approval[run-code-gate]] decision=allow detail=<verdict>`。
 - **顶层弹窗补代码。** 宿主审批面板对 `run_code` 不显示任何命令块，所以顶层 ask 在文案末尾追加 `[code: …]` 单行摘要（压平空白、截断 200 字符），和默认模板一样走 `displayReason` 双语通道。
@@ -420,7 +420,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `readOnlyTools` | 逗号分隔文本（集合） | 任何模式都放行 |
 | `autoAllowTools` | 逗号分隔文本（集合） | 与族无关、直接绕过审批（默认含 `run_code`，见 PTC preset） |
 | `readOnlyGitCommands` | 开关 | 严格解析后的只读命令（或命令链，外加 `echo "…"` 行）免审（默认开） |
-| `runCodePureExpressions` | 开关 | 顶层 `run_code` 程序里的无调用纯表达式（算术、比较、模板拼接、字面量下标取值）免审；smart 下同时是分类器之前的快放。关掉恢复严格语法（默认开） |
+| `runCodePureExpressions` | 开关 | 顶层 `run_code` 程序的宽语法免审（纯表达式、受识别控制流、回调经检查的白名单方法）；smart 下同时是分类器之前的快放。关掉恢复严格语法（默认开） |
 | `sandboxDefaults` | 每模式下拉框 | 切到该模式时联动写入的 sandbox 策略 |
 | `askReason` | 多行文本 | 审批弹窗文案模板（占位符：`{tool}` / `{mode}` / `{family}`） |
 
@@ -517,7 +517,7 @@ schema 默认  →  cordis `base`（部署方的 cordis 配置）  →  用户�
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', + 17 个 `mnemon_*` 名]` | 始终绕过审批的工具。`run_code` 在此是因为 PTC preset 下它是传输层：顶层调用先按程序代码结构裁决（纯 `tools.*` 程序放行交给子调用闸门，其余 JS 弹窗），程序内子调用仍逐个过闸；删掉它则改为「每个程序盲弹一次」、不做代码检查。dsh-mnemon 的 17 个 `mnemon_*` 工具也默认在此——开箱已兼容 dsh-mnemon；删掉这些名字可改为弹窗 |
 | `unclassified` | string | `ask` | 未分类工具的策略：`ask`（需要审批）或 `allow`（自动批准） |
 | `readOnlyGitCommands` | boolean | `true` | 放行严格解析后的只读命令链而不再弹窗（见[只读 git 命令](#只读-git-命令)）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
-| `runCodePureExpressions` | boolean | `true` | 放行顶层 `run_code` 程序里无调用的纯表达式（见 PTC preset 一节；smart 下同时是分类器之前的快放）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
+| `runCodePureExpressions` | boolean | `true` | 放行顶层 `run_code` 程序的宽语法——纯表达式、受识别控制流、回调经递归检查的白名单方法（见 PTC preset 一节；smart 下同时是分类器之前的快放）。同时是设置页开关；用户覆盖叠加在该 base 之上 |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | 各审批模式的沙箱模式 |
 | `askReason` | string | `[{family}] Tool: {tool} \| Mode: {mode}` | 审批请求的消息模板。支持 `{tool}`、`{mode}`、`{family}` 占位符。默认自带双语（zh UI 显示内置中文版，日志记英文）；自定义模板单语原样显示 |
 | `smartProvider` | string \| null | `null` | smart 模式分类器的 LLM provider（null = 继承 `agentDefaultModel`） |
@@ -610,14 +610,14 @@ patch 逐字重复同一份名单——装 bundle 与手动 insert 的行为一�
 - **打包** —— `skills/` 必须在 `files` 白名单里；漏掉时插件照常加载但只打一
   条警告、不贡献 skill（与漏掉 `cordis.patch.yml` 同类的安装路径缺陷）。
 - **PTC 契约** —— skill 也说明 PTC preset 下的规则：顶层 `run_code` 程序是纯
-  `tools.*` 调用、或含无调用的纯表达式时免弹（其余 JS 要弹；设置页开关可关掉
+  `tools.*` 调用、受识别的纯运算/控制流/白名单方法时免弹（其余 JS 要弹；设置页开关可关掉
   宽档）、程序内 `tools.*` 绑定调用逐个
   过闸、绑定被拒抛 `ToolCallError` 后不要换路绕过。
 
 ## 工作原理
 
 1. **工具执行拦截**：插件监听 `tools/pre-execute` 事件
-2. **PTC 代码检查**：顶层 `run_code` 先按程序代码结构裁决——纯 `tools.*` 程序与（按 `runCodePureExpressions` 开关）无调用的纯表达式放行交给子调用闸门，其余 JS 在 request/auto-edit 下弹窗（附 `[code: …]` 摘要）；smart 下同一裁决在危险清单之后、分类器之前快放；程序内子调用回到第 1 步，用真实工具名重新过闸
+2. **PTC 代码检查**：顶层 `run_code` 先按程序代码结构裁决——纯 `tools.*` 程序与（按 `runCodePureExpressions` 开关）受识别的纯运算、控制流、白名单方法放行交给子调用闸门，其余 JS 在 request/auto-edit 下弹窗（附 `[code: …]` 摘要）；smart 下同一裁决在危险清单之后、分类器之前快放；程序内子调用回到第 1 步，用真实工具名重新过闸
 3. **族分类**：确定工具属于哪个族
 4. **只读快路径**：属于 shell 族、但每一环都是严格解析后的只读命令的调用，直接放行
 5. **模式检查**：评估当前审批模式

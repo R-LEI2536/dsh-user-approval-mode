@@ -142,10 +142,12 @@ export interface Config {
    *  单条只读 git 调用在 request/auto-edit/smart 下免审；关闭则恢复
    *  「shell 一律弹窗」。 */
   readOnlyGitCommands?: boolean
-  /** PTC 顶层 run_code 宽语法开关（默认 true，设置页可改）：放行「无调用的
-   *  纯表达式」语句（算术/比较/模板拼接/字面量下标取值）。关闭则恢复严格
-   *  语法——只有 tools.* 调用、接结果变量与受信值 return 免弹。对应
-   *  run-code-gate 的 tools-and-pure / pure 两类 verdict。 */
+  /** PTC 顶层 run_code 宽语法开关（默认 true，设置页可改）：放行三类语句——
+   *  无调用的纯表达式（算术/比较/模板拼接）、受识别的控制流（if/for/while/
+   *  switch/try，体递归套用同一语法）、白名单内建方法（map/slice/sort/
+   *  JSON.parse 等，回调体同样递归检查）。关闭则恢复严格语法——只有
+   *  tools.* 调用、接结果变量与受信值 return 免弹。对应 run-code-gate 的
+   *  tools-and-pure / pure 两类 verdict。 */
   runCodePureExpressions?: boolean
   /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
   sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>
@@ -213,7 +215,7 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .volatile(),
   autoAllowTools: Schema.array(Schema.string())
     .default(['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route'])
-    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting). `run_code` ships here because under the PTC agent preset it is the transport: its program\'s `tools.*` sub-calls still pass this same gate and are classified by their real tool name. Since the code-structure gate, a top-level `run_code` is itself classified first: a program of pure `tools.*` calls — and, per the runCodePureExpressions switch, call-free pure computation — is allowed through to the sub-call gate, any other JS asks (with a code summary in the prompt); smart routes the program through the five-step pipeline, with the same verdict as a fast-allow before the LLM. Remove it from the list to gate the transport itself (one prompt per program, no code inspection). All 17 `mnemon_*` tools (the dsh-mnemon plugin) also ship here so memory-enabled deployments never prompt for them; delete the mnemon_* names to gate them instead.')
+    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting). `run_code` ships here because under the PTC agent preset it is the transport: its program\'s `tools.*` sub-calls still pass this same gate and are classified by their real tool name. Since the code-structure gate, a top-level `run_code` is itself classified first: a program of pure `tools.*` calls — and, per the runCodePureExpressions switch, recognized pure computation, control flow, and whitelisted builtin methods — is allowed through to the sub-call gate, any other JS asks (with a code summary in the prompt); smart routes the program through the five-step pipeline, with the same verdict as a fast-allow before the LLM. Remove it from the list to gate the transport itself (one prompt per program, no code inspection). All 17 `mnemon_*` tools (the dsh-mnemon plugin) also ship here so memory-enabled deployments never prompt for them; delete the mnemon_* names to gate them instead.')
     .volatile(),
   unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])
     .default('ask')
@@ -224,7 +226,7 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .volatile(),
   runCodePureExpressions: Schema.boolean()
     .default(true)
-    .description('Allow call-free pure expressions (arithmetic, comparisons, template assembly, literal-index reads) in a top-level run_code program without prompting, under request/auto-edit and as a fast-allow inside the smart pipeline (after the danger list, before the LLM). Turn it off to restore the strict grammar: only tools.* calls, result variables, and returns of trusted values pass. Mirrors readOnlyGitCommands in shape. See docs/adr/0004-run-code-is-a-transport.md.')
+    .description('Allow the widened grammar in a top-level run_code program without prompting, under request/auto-edit and as a fast-allow inside the smart pipeline (after the danger list, before the LLM): call-free pure expressions (arithmetic, comparisons, template assembly, literal-index reads), recognized control flow (if / for / while / switch / try with bodies recursively checked the same way), and a written-down list of pure builtin methods (Object.keys, .map/.slice/.sort, JSON.parse, …) whose callbacks are checked recursively — a gated tools.* call stays gated wherever it hides. Turn it off to restore the strict grammar: only tools.* calls, result variables, and returns of trusted values pass. Mirrors readOnlyGitCommands in shape. See docs/adr/0004-run-code-is-a-transport.md.')
     .volatile(),
   sandboxDefaults: Schema.dict(Schema.union(['read-only', 'workspace-write', 'danger-full-access'] as ('read-only' | 'workspace-write' | 'danger-full-access')[]))
     .default({
@@ -591,8 +593,9 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       }
       if (mode === 'request' || mode === 'auto-edit') {
         // 语法闸门：严格语法（纯 tools.* 程序）放行交给子调用闸门；宽语法
-        // （无调用的纯表达式）由 runCodePureExpressions 开关控制；其余（含
-        // 解析失败、不可读的 code）一律 ask，弹窗带 [code: …] 单行摘要。
+        // （纯表达式 + 受识别控制流 + 白名单方法，回调递归检查）由
+        // runCodePureExpressions 开关控制；其余（含解析失败、不可读的 code）
+        // 一律 ask，弹窗带 [code: …] 单行摘要。
         if (code !== undefined) {
           const verdict = runCodeGateVerdict(code)
           if (runCodeGateAllows(verdict, cfg.runCodePureExpressions !== false)) {

@@ -10,8 +10,9 @@
  *
  * - `run_code` is transport, classified by its program's code structure:
  *   a tools-only program is allowed in every mode (with a greppable gate
- *   log), call-free pure computation is allowed per the
- *   `runCodePureExpressions` switch, anything else asks in
+ *   log); the widened grammar — pure expressions, recognized control
+ *   flow, whitelisted builtin methods with checked callbacks — is allowed
+ *   per the `runCodePureExpressions` switch; anything else asks in
  *   request/auto-edit (with a `[code: …]` summary) and rides the smart
  *   five-step pipeline in smart mode (the grammar being a fast-allow
  *   inside it, after the danger list);
@@ -144,14 +145,19 @@ test('ptc: turning the width switch off restores the strict grammar', async () =
   }
   // Smart: the widened grammar is closed, so the pure program falls
   // through to the (missing) LLM seam and fails safe; tools-only still
-  // fast-allows.
+  // fast-allows. A recognized loop is closed too — the strict grammar
+  // knows no control flow.
   const smart = makeGate('smart', { runCodePureExpressions: false })
   const pureSmart = await smart.decide(runCode('const x = 1 + 1\nreturn x'))
   assert.equal(pureSmart.kind, 'ask')
   assert.match(pureSmart.reason ?? '', /\[smart: llm-unavailable\]/)
+  const loopSmart = await smart.decide(runCode("const a = ['x']\nfor (const p of a) { await tools.grep({ pattern: p }) }"))
+  assert.equal(loopSmart.kind, 'ask')
+  assert.match(loopSmart.reason ?? '', /\[smart: llm-unavailable\]/)
   const toolsOnlySmart = await smart.decide(runCode())
   assert.deepEqual(toolsOnlySmart, { kind: 'allow' })
   assert.deepEqual(smart.logs, [
+    '[dsh-user-approval[smart]] decision=ask detail=llm-unavailable',
     '[dsh-user-approval[smart]] decision=ask detail=llm-unavailable',
     '[dsh-user-approval[run-code-gate]] decision=allow detail=tools-only',
   ])
@@ -174,18 +180,38 @@ test('ptc: yolo and off allow a pure-JS program without logging', async () => {
   }
 })
 
-test('ptc: a mixed program asks, and its write sub-call asks again (double prompt)', async () => {
+test('ptc: a recognized loop program passes the top level; its gated sub-call still asks', async () => {
+  // The devweb test agent's shape: a for-of over a declared array with a
+  // gated read inside. The top level is recognized (tools-and-pure) and
+  // allows; the loop body's gated sub-call still passes the family gate.
   const gate = makeGate('request')
   const program = [
-    "const r = await tools.read({ file_path: 'README.md' })",
-    'if (r.lines.length > 100) {',
-    "  await tools.write({ file_path: 'big.txt', content: 'big' })",
+    "const patterns = ['big', 'small']",
+    'for (const p of patterns) {',
+    "  await tools.grep({ pattern: p })",
     '}',
+    "return 'done'",
+  ].join('\n')
+  const top = await gate.decide(runCode(program))
+  assert.deepEqual(top, { kind: 'allow' })
+  assert.deepEqual(gate.logs, ['[dsh-user-approval[run-code-gate]] decision=allow detail=tools-and-pure'])
+  const inner = await gate.decide(subCall('grep', { pattern: 'big' }))
+  assert.deepEqual(inner, { kind: 'allow' }, 'grep is a read-only sub-call')
+})
+
+test('ptc: a mixed program asks, and its write sub-call asks again (double prompt)', async () => {
+  // The program leaves the grammar entirely (console.log is an
+  // unrecognized call), so the top level asks; after that approval the
+  // write sub-call passes the family gate and asks again.
+  const gate = makeGate('request')
+  const program = [
+    "console.log('starting')",
+    "await tools.write({ file_path: 'big.txt', content: 'big' })",
   ].join('\n')
   const top = await gate.decide(runCode(program))
   assert.equal(top.kind, 'ask')
   assert.match(top.reason ?? '', /\[other\] Tool: run_code \| Mode: request/)
-  assert.match(top.reason ?? '', /\[code: const r = await tools\.read\(\{ file_path: 'README\.md' \}\) if \(r\.lines\.length > 100\) \{ await tools\.write\(\{ file_path: 'big\.txt', content: 'big' \}\) \}\]/)
+  assert.match(top.reason ?? '', /\[code: console\.log\('starting'\) await tools\.write\(\{ file_path: 'big\.txt', content: 'big' \}\)\]/)
   // The double prompt: the program's own write sub-call still passes the
   // family gate after the top-level ask.
   const inner = await gate.decide(subCall('write', { path: 'big.txt', content: 'big' }))

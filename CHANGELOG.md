@@ -16,13 +16,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate (`src/run-code-gate.ts`): a program whose every statement is a
   `tools.*` call, a variable receiving one, or a `return` of trusted values
   is allowed through to the sub-call gate (each sub-call already re-enters
-  the gate under its real tool name); call-free pure expressions —
-  arithmetic, comparisons, template assembly, literal-index reads — pass too
-  while the new `runCodePureExpressions` switch is on (default; a settings
-  page switch restores the strict grammar). Any other JS — branching,
-  imports, any call that is not `tools.*`, dynamic member access, or
-  unparseable code — prompts under request and auto-edit. This closes the
-  silent-`rmSync` hole where a program with zero tool calls executed
+  the gate under its real tool name); the widened grammar — call-free pure
+  expressions (arithmetic, comparisons, template assembly, literal-index
+  reads), recognized control flow (`if` / `for` / `while` / `switch` /
+  `try` with tests and bodies recursively checked, local assignment for
+  loop counters), and a written-down list of pure builtin functions and
+  methods (`Object.keys`, `Math.max`, `.map` / `.filter` / `.slice` /
+  `.sort`, `JSON.parse`, …) whose callback bodies are checked the same way
+  (`list.map(x => rmSync('./x'))` prompts) — passes too while the new
+  `runCodePureExpressions` switch is on (default; the settings page
+  restores the strict grammar). A `tools.*` sub-call stays gated wherever
+  it hides, and a program that binds the name `tools` anywhere asks as a
+  whole. Any other JS — imports, any call not on the written-down lists,
+  `new`, dynamic member access, or unparseable code — prompts under
+  request and auto-edit. This closes the silent-`rmSync` hole where a
+  program with zero tool calls executed
   without any prompt. Every gate allow logs one greppable line,
   `[dsh-user-approval[run-code-gate]] decision=allow detail=<verdict>`.
 - **Top-level `run_code` prompts carry a `[code: …]` summary.** The host
@@ -44,7 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The bundled `dsh-approval-shell-style` skill's PTC contract section now
   states the code-structure rule: a top-level program passes when it is
-  pure `tools.*` calls or recognized pure computation, and a direct
+  pure `tools.*` calls or recognized pure computation, control flow, or
+  whitelisted methods, and a direct
   `node:fs` / `node:child_process` import
   stops the program at a top-level prompt under the strict modes instead of
   running silently. The double prompt (top-level code ask plus per-sub-call

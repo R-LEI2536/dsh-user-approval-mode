@@ -83,10 +83,12 @@ export interface Config {
      *  单条只读 git 调用在 request/auto-edit/smart 下免审；关闭则恢复
      *  「shell 一律弹窗」。 */
     readOnlyGitCommands?: boolean;
-    /** PTC 顶层 run_code 宽语法开关（默认 true，设置页可改）：放行「无调用的
-     *  纯表达式」语句（算术/比较/模板拼接/字面量下标取值）。关闭则恢复严格
-     *  语法——只有 tools.* 调用、接结果变量与受信值 return 免弹。对应
-     *  run-code-gate 的 tools-and-pure / pure 两类 verdict。 */
+    /** PTC 顶层 run_code 宽语法开关（默认 true，设置页可改）：放行三类语句——
+     *  无调用的纯表达式（算术/比较/模板拼接）、受识别的控制流（if/for/while/
+     *  switch/try，体递归套用同一语法）、白名单内建方法（map/slice/sort/
+     *  JSON.parse 等，回调体同样递归检查）。关闭则恢复严格语法——只有
+     *  tools.* 调用、接结果变量与受信值 return 免弹。对应 run-code-gate 的
+     *  tools-and-pure / pure 两类 verdict。 */
     runCodePureExpressions?: boolean;
     /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
     sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>;
