@@ -552,7 +552,13 @@ composer toolbar is independently localized via DSH's locale service
 approval dialog renders the reason as a plain string with no markup channel,
 so styling or coloring parts of the template has no effect. Newlines do not
 render as line breaks either — the dialog headline collapses them to spaces,
-so keep the template on one line.
+so keep the template on one line. The command detail block below the
+headline has the same limitation: it is styled monospace but also collapses
+newlines, so a multi-line bash command displays flattened to one line. This
+is an upstream dialog rendering limitation (the host `ui-approval` CSS lacks
+`white-space: pre-wrap`), not something the plugin can fix from its side;
+this is also why the PTC `[args: …]` summary deliberately pre-collapses
+whitespace.
 
 ## Settings Page
 
