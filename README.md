@@ -27,7 +27,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 - **Read-only git fast-path**: A chain of strictly-parsed read-only links (`git status`, `git log`, `git diff`, …) joined with `&&` `;` `|` or a newline, plus `echo "…"` decoration lines, is exempt from approval in request, auto-edit, and smart, so the agent's highest-frequency shell calls stop prompting. Switch it on the settings page (`readOnlyGitCommands`), or pin it in `cordis.yml`.
 - **Bundled shell-style skill**: The package ships `dsh-approval-shell-style`, a skill the agent can load to write approval-friendly commands (fast-path grammar, expected prompts, post-rejection posture). It appears in the skill catalog of every session while the plugin is mounted and disappears with the plugin.
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
-- **PTC preset compatibility**: Under the `ptc` agent preset the model can call only `run_code`; the plugin treats it as the transport and allows it, while every `tools.*` sub-call inside the program still passes the gate under its real tool name, with a command/path summary appended to the approval prompt
+- **PTC preset compatibility**: Under the `ptc` agent preset the model can call only `run_code`; the plugin classifies the top-level call by the program's code structure (pure `tools.*` programs pass to the sub-call gate, any other JS prompts under request/auto-edit, smart sends the code to the classifier), while every `tools.*` sub-call still passes the gate under its real tool name, with command/path/code summaries appended to the approval prompts
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
 - **In-Memory State**: Per-session mode stored in memory, resets to default on DSH restart
@@ -47,7 +47,7 @@ The approval modes are inspired by [Qwen Code](https://github.com/QwenLM/Qwen-Co
 
 ¹ Except a strictly-parsed read-only command chain (a `git status` / `git log` / `git diff` link, an `echo "…"` line, or those joined with `&&` `;` `|`), which is allowed without prompting in these three modes — see [Read-only git commands](#read-only-git-commands).
 
-**The same table holds under the `ptc` agent preset.** That preset lets the model call only `run_code`; every other native tool is reachable only as a `tools.*` binding inside the program. The `run_code` call itself is the transport and is allowed by default (it ships in `autoAllowTools`); each sub-call is classified by this table — a `write` sub-call asks under request, a `bash` sub-call goes through the five-step pipeline under smart, and so on. Details and limits: "PTC preset" under Known Limitations.
+**The same table holds under the `ptc` agent preset.** That preset lets the model call only `run_code`; every other native tool is reachable only as a `tools.*` binding inside the program. The `run_code` call itself is classified first: a program of pure `tools.*` calls is allowed through to the sub-call gate, any other JS prompts under request/auto-edit (smart sends the program text to the classifier; yolo/off skip the check); each sub-call is then classified by this table — a `write` sub-call asks under request, a `bash` sub-call goes through the five-step pipeline under smart, and so on. Details and limits: "PTC preset" under Known Limitations.
 
 ### Mode Details
 
@@ -474,22 +474,36 @@ Under the `ptc` agent preset the model can call only `run_code`; every other
 native tool is reachable only as a `tools.*` binding inside the program. What
 the plugin does, and where its reach ends:
 
-- **The transport does not prompt.** `run_code` ships in `autoAllowTools`, so
-  request, auto-edit, smart, yolo and off all allow it, and the program code is
-  never sent to the smart classifier. The real actions are the program's
-  sub-calls: each one carries `parent` and its real tool name, re-enters the
-  same `tools/pre-execute` gate, and is classified by the table above.
-- **The prompt carries the arguments.** The host approval panel resolves only a
-  top-level tool node's `command`; a PTC sub-call is nested under the `run_code`
-  node, so the panel cannot show its arguments. The plugin therefore appends
-  `[args: …]` to the sub-call's ask reason (the bash command, the write path, or
-  otherwise JSON; one line, capped at 200 characters). Native calls are
-  unchanged.
+- **The top-level call is classified by its code.** `run_code` ships in
+  `autoAllowTools`, but before that allow takes effect the gate inspects the
+  program: a program whose every statement is a `tools.*` call (plus the
+  variables and `return` that receive results) is allowed through — the real
+  actions are its sub-calls, each one carrying `parent` and its real tool name
+  back into the same `tools/pre-execute` gate. Any other JS (arithmetic,
+  branching, imports, dynamic member access, or syntax the whitelist does not
+  recognize) prompts under request and auto-edit. Smart mode sends the program
+  text through the five-step classifier pipeline instead; yolo and off inspect
+  nothing.
+- **The top-level prompt carries the code.** The host approval panel renders no
+  command block for `run_code`, so a top-level ask appends a one-line
+  `[code: …]` summary (whitespace-collapsed, capped at 200 characters) after
+  the usual ask copy — bilingual through the same `displayReason` channel as
+  the default template.
+- **The sub-call prompt carries the arguments.** The host approval panel
+  resolves only a top-level tool node's `command`; a PTC sub-call is nested
+  under the `run_code` node, so the panel cannot show its arguments. The plugin
+  therefore appends `[args: …]` to the sub-call's ask reason (the bash command,
+  the write path, or otherwise JSON; one line, capped at 200 characters).
+  Native calls are unchanged. Mixed programs may therefore prompt twice — the
+  top-level code ask plus each gated sub-call — which is the accepted cost of
+  closing the silent-`rmSync` hole; a future revision may merge the two.
 - **Direct Node effects bypass the gate.** A program that calls
   `import('node:fs')` or `node:child_process` writes or spawns without a tool
-  call, so the plugin never sees it. The only boundary is the sandbox mode the
-  plugin writes when switching modes (`workspace-write` and friends; see the
-  `sandboxDefaults` option in
+  call, so the plugin never sees it. Under request/auto-edit such a program now
+  prompts at the top level (the whitelist is syntax-only); under smart it rides
+  the LLM classifier, which can be fooled. The only hard boundary is the
+  sandbox mode the plugin writes when switching modes (`workspace-write` and
+  friends; see the `sandboxDefaults` option in
   [Configuration Options](#configuration-options)). Under the PTC preset,
   request mode therefore does **not** mean "every write is approved".
 - **Rejections and timeouts.** A rejected sub-call only raises `ToolCallError`
@@ -498,10 +512,10 @@ the plugin does, and where its reach ends:
   `run_code` run budget (default 120 s, capped at 600 s), so many prompts can
   end the program while it waits.
 - **Escape hatch.** Remove `run_code` from `autoAllowTools` to restore "one
-  prompt per program" (the prompt still cannot show the program, because the
-  host approval panel renders shell commands only). A model-direct call to a
-  collapsed native tool is rejected by the host before the gate — that call is
-  neither allowed nor intercepted by the plugin.
+  blind prompt per program" with no code inspection (the prompt still cannot
+  show the program, because the host approval panel renders shell commands
+  only). A model-direct call to a collapsed native tool is rejected by the host
+  before the gate — that call is neither allowed nor intercepted by the plugin.
 
 A session that needs per-write approval should not use the PTC preset; if it
 must, tighten the sandbox to `read-only` or accept the boundaries above.
@@ -537,9 +551,11 @@ mode), `{family}` (edit | shell | readonly | other).
 
 A PTC program's inner tool call gets a `[args: …]` suffix appended after the
 rendered template (the command or path, one line, capped at 200 characters),
-because the host dialog cannot display a nested call's arguments. The suffix
-applies to both language variants and is not configurable; native calls never
-get one.
+because the host dialog cannot display a nested call's arguments. A top-level
+`run_code` ask gets a `[code: …]` suffix instead (the program text, one line,
+capped at 200 characters), because the dialog shows no command block for
+`run_code` at all. Both suffixes apply to both language variants and are not
+configurable; native calls never get one.
 
 **Custom text stays manual**: the default's zh variant is built in, but a
 custom `askReason` is one plain string — the server has no locale signal at
@@ -726,7 +742,7 @@ You can customize the plugin behavior in your agent preset:
 | `editTools` | string[] | `['write', 'edit', 'str_replace_editor', 'update_goal']` | Tools classified as "edit" family (file modifications) |
 | `shellTools` | string[] | `['bash', 'pwsh', 'tool:bash', 'tool:pwsh']` | Tools classified as "shell" family (command execution) |
 | `readOnlyTools` | string[] | `['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'list_subagent_models', 'schedule_list', 'schedule_view', 'working_directory', 'list_agents', 'job_list', 'get_goal']` | Tools classified as "readonly" family (always allowed). `working_directory` ships read-only: sandbox permission roots stay fixed, only relative-path resolution follows the new directory |
-| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', + 17 `mnemon_*` names]` | Tools that always bypass approval. `run_code` ships here because it is the PTC preset's transport: the program's sub-calls still pass the gate. Remove it to gate the transport itself. All 17 `mnemon_*` tools (dsh-mnemon) also ship here — compatible with dsh-mnemon out of the box; delete the mnemon_* names to gate them |
+| `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', + 17 `mnemon_*` names]` | Tools that always bypass approval. `run_code` ships here because it is the PTC preset's transport: the top-level call is classified by the program's code structure first (pure `tools.*` programs pass to the sub-call gate, other JS prompts), and the sub-calls still pass the gate. Remove it to gate the transport itself (one blind prompt per program, no code inspection). All 17 `mnemon_*` tools (dsh-mnemon) also ship here — compatible with dsh-mnemon out of the box; delete the mnemon_* names to gate them |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
 | `readOnlyGitCommands` | boolean | `true` | Allow a strictly-parsed read-only command chain instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
@@ -759,11 +775,11 @@ The plugin automatically classifies tools into four families:
 | **Other** | *all other tools* | Unclassified tools, behavior depends on `unclassified` config |
 
 `run_code` is the PTC preset's transport and is deliberately kept out of every
-family: it ships in `autoAllowTools`, so the approval lands on each sub-call
-inside the program (a sub-call carries its real tool name and is classified by
-the table above). Adding it to a family list changes nothing — `autoAllowTools`
-is checked first — and only removing it from `autoAllowTools` gates the program
-itself.
+family: it ships in `autoAllowTools`, and the approval lands on the top-level
+code inspection (see PTC preset above) plus each sub-call inside the program
+(a sub-call carries its real tool name and is classified by the table above).
+Adding it to a family list changes nothing — `autoAllowTools` is checked first
+— and only removing it from `autoAllowTools` gates the program itself.
 
 ### Read-only git commands
 
@@ -837,18 +853,19 @@ what to do after a rejection.
 - **Packaging** — `skills/` is part of the `files` whitelist. Dropping it ships
   a plugin that still loads but logs a warning and contributes no skill: the
   same class of install-path defect as a missing `cordis.patch.yml`.
-- **PTC contract** — the skill also states the PTC-preset rules: `run_code`
-  itself does not prompt, every `tools.*` binding call passes the gate, and a
-  rejected binding raises `ToolCallError` without a licence to route around it.
+- **PTC contract** — the skill also states the PTC-preset rules: a top-level
+  `run_code` program passes only when it is pure `tools.*` calls (other JS asks),
+  every `tools.*` binding call passes the gate, and a rejected binding raises
+  `ToolCallError` without a licence to route around it.
 
 ## How It Works
 
 1. **Tool Execution Interception**: The plugin listens to `tools/pre-execute` events
-2. **PTC transport**: `run_code` is allowed directly because it ships in `autoAllowTools`; its program's sub-calls return to step 1 under their real tool names
+2. **PTC code inspection**: A top-level `run_code` is classified by its program's code first — pure `tools.*` programs pass to the sub-call gate, any other JS asks under request/auto-edit (with a `[code: …]` summary), smart sends the code to the classifier; the program's sub-calls return to step 1 under their real tool names
 3. **Family Classification**: Determines which family the tool belongs to
 4. **Read-Only Fast-Path**: A shell call whose every link is a strictly-parsed read-only command is allowed without approval
 5. **Mode Check**: Evaluates current approval mode
-6. **Decision**: Returns `{ kind: 'ask' }` for tools requiring approval, or allows execution. A PTC sub-call's ask reason carries an argument summary
+6. **Decision**: Returns `{ kind: 'ask' }` for tools requiring approval, or allows execution. A PTC sub-call's ask reason carries an argument summary; a top-level `run_code` ask carries a code summary
 7. **Sandbox Sync**: Automatically adjusts sandbox policy when switching modes
 8. **State Storage**: Approval mode stored in-memory (WeakMap), resets on DSH restart
 9. **UI Synchronization**: Web UI chip manages state via React, syncs from server on refresh
@@ -871,6 +888,7 @@ what to do after a rejection.
 - `@deepseek-ai/dsh-client-ui-primitives`: Button / Input / Menu primitives
 - `@deepseek-ai/dsh-client-ui-slots`: Slot registry
 - `@deepseek-ai/schemastery`: Configuration schema validation
+- `acorn`: JavaScript parser backing the PTC `run_code` code-structure gate
 - `react`: UI rendering
 - `dsh-tool-list-dir`: Recommended read-only directory browsing tool
 

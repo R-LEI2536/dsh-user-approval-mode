@@ -7,7 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **PTC preset: the top-level `run_code` call is now classified by its
+  program's code structure** (ADR 0004 revision). `run_code` stays in
+  `autoAllowTools`, but before that allow takes effect the gate parses the
+  program with the new `acorn` dependency and applies a strict syntax
+  whitelist (`src/run-code-gate.ts`): a program whose every statement is a
+  `tools.*` call, a variable receiving one, or a `return` of trusted values
+  is allowed through to the sub-call gate (each sub-call already re-enters
+  the gate under its real tool name); any other JS — arithmetic, branching,
+  imports, dynamic member access, or unparseable code — prompts under
+  request and auto-edit. This closes the silent-`rmSync` hole where a
+  program with zero tool calls executed without any prompt.
+- **Top-level `run_code` prompts carry a `[code: …]` summary.** The host
+  approval dialog renders no command block for `run_code`, so a top-level
+  ask appends the program text (whitespace-collapsed, capped at 200
+  characters) after the usual ask copy, bilingual through the same
+  `displayReason` channel as the default template.
+- **Smart mode routes the program text through the five-step pipeline.**
+  `commandFromArguments` gains a `run_code` branch (the program's `code`
+  string becomes the classifier's command and the session-memory key), so
+  smart keeps its danger-list / memory / LLM / fail-safe semantics for
+  programs; smart does not use the whitelist.
+
 ### Changed
+
+- The bundled `dsh-approval-shell-style` skill's PTC contract section now
+  states the code-structure rule: a top-level program passes only when it is
+  pure `tools.*` calls, and a direct `node:fs` / `node:child_process` import
+  stops the program at a top-level prompt under the strict modes instead of
+  running silently. The double prompt (top-level code ask plus per-sub-call
+  asks for mixed programs) is documented as the accepted cost; merging the
+  two prompts is future work.
+- Removing `run_code` from `autoAllowTools` now restores "one blind prompt
+  per program" with no code inspection (the classification branch requires
+  the `autoAllowTools` entry); previously the entry's removal was the only
+  way to prompt for a program at all.
 
 - **The default approval prompt is restructured and ships bilingual.** The old
   default — `approval needed for {tool} under {mode} mode ({family}); read-only
@@ -42,9 +78,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
-- `test/gate-ptc.test.ts` pins the new default format, adds a bilingual
-  `displayReason` case (en reason + zh display carrying the same
-  `[args: …]` suffix), and a custom-template case that stays single-language.
+- `test/run-code-gate.test.ts` (new) pins the whitelist boundary itself:
+  the tools-only shapes that pass, the JS shapes that ask (pure computation,
+  branching, imports, computed member access, ambient `process` /
+  `globalThis`, chaining off a tool call, unparseable code), and the
+  `[code: …]` preview collapse/cap behavior.
+- `test/gate-ptc.test.ts` covers both Unreleased features: the askReason
+  matrix (new default format, bilingual `displayReason` carrying the same
+  suffixes, custom template staying single-language) and the new top-level
+  program matrix (tools-only allow in the non-smart modes, non-tools ask
+  with `[code: …]`, yolo/off allow, smart danger-list and
+  `llm-unavailable` fallbacks with the code as command), plus the
+  double-prompt pin, the missing-code fail-safe, and preview capping.
 
 ## [0.14.0] - 2026-11-20
 

@@ -75,7 +75,7 @@ export interface Config {
     shellTools?: string[];
     /** 只读工具名（默认 read/glob/grep/read_image/list_directory/todo_write + list_subagent_models/schedule_list/schedule_view/working_directory/list_agents/job_list/get_goal）；任何模式下免审。 */
     readOnlyTools?: string[];
-    /** 永远免审的控制/编排工具（默认 ask_user_question/exit_plan_mode + job_output/skill/subagent/subagent_fork/present/wait_agent/send_message/job_kill + team_task 四件套 + run_code + dsh-mnemon 的 17 个 mnemon_* 工具）。 */
+    /** 永远免审的控制/编排工具（默认 ask_user_question/exit_plan_mode + job_output/skill/subagent/subagent_fork/present/wait_agent/send_message/job_kill + team_task 四件套 + run_code + dsh-mnemon 的 17 个 mnemon_* 工具）。注意 run_code 例外：PTC 顶层调用按程序代码结构分类（纯 tools.* 子调用放行，其余 ask），见 ADR 0004。 */
     autoAllowTools?: string[];
     /** 未分类工具的策略：`ask`（默认，fail-safe）或 `allow`。 */
     unclassified?: 'ask' | 'allow';
@@ -174,5 +174,6 @@ export declare function ptcArgumentPreview(exec: PtcPreviewExecution): string | 
  * @returns The same reason for native calls; the annotated reason for PTC sub-calls.
  */
 export declare function withPtcArgumentPreview(reason: string, exec: PtcPreviewExecution): string;
+export { isToolCallsOnly, runCodeProgramFromArguments, runCodePreview, RUN_CODE_PREVIEW_MAX_CHARS, } from './run-code-gate.js';
 export declare function apply(ctx: Context, config: VolatileConfig): void;
 //# sourceMappingURL=index.d.ts.map

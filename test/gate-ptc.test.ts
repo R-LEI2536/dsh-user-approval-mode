@@ -16,6 +16,16 @@
  *   the host displayReason channel for zh UIs; a custom template stays verbatim;
  * - removing `run_code` from `autoAllowTools` restores the per-program prompt.
  *
+ * - `run_code` is transport: a tools-only program is auto-allowed in every
+ *   mode; any other JS asks in request/auto-edit (with a `[code: …]`
+ *   summary) and rides the smart five-step pipeline in smart mode;
+ * - sub-calls are classified by family exactly like native calls;
+ * - a PTC sub-call's ask reason carries an argument summary because the host
+ *   approval dialog cannot show a nested call's arguments;
+ * - the default ask copy ships bilingual: en is the logged reason, zh rides
+ *   the host displayReason channel for zh UIs; a custom template stays verbatim;
+ * - removing `run_code` from `autoAllowTools` restores the per-program prompt.
+ *
  * The harness mirrors `test/gate-read-only-git.test.ts`: the REAL gate is
  * driven with a minimal fake Context, defaults come from the real `Config`
  * schema, and `next()` reports the downstream `allow` a plain host would.
@@ -80,8 +90,9 @@ function makeGate(mode: ApprovalMode, configOverrides: ApprovalConfig = {}): Gat
   }
 }
 
-/** A `run_code` top-level call (no parent). */
-const runCode = (code = 'const x = 1; return x') => ({
+/** A `run_code` top-level call (no parent). Default code is a tools-only
+ * program: the shape the transport contract allows through. */
+const runCode = (code = "const r = await tools.read({ file_path: 'README.md' })\nreturn r.lines.length") => ({
   name: 'run_code',
   arguments: { code, description: 'any program' },
 })
@@ -95,12 +106,118 @@ const subCall = (name: string, args: unknown, n = 1) => ({
   rootCallId: 'call-1',
 })
 
-test('ptc: run_code is auto-allowed as transport in every mode', async () => {
-  for (const mode of ['request', 'auto-edit', 'smart', 'yolo', 'off'] as const) {
+test('ptc: a tools-only program is allowed as transport in the non-smart modes', async () => {
+  for (const mode of ['request', 'auto-edit', 'yolo', 'off'] as const) {
     const gate = makeGate(mode)
     assert.deepEqual(await gate.decide(runCode()), { kind: 'allow' }, `mode=${mode}`)
     assert.deepEqual(gate.logs, [], `mode=${mode} must not log a decision for the transport`)
   }
+  // Smart does not use the whitelist: the program rides the five-step
+  // pipeline, and a missing LLM seam fails safe to manual review.
+  const smart = makeGate('smart')
+  const smartDecision = await smart.decide(runCode())
+  assert.equal(smartDecision.kind, 'ask')
+  assert.match(smartDecision.reason ?? '', /\[smart: llm-unavailable\]/)
+})
+
+test('ptc: request and auto-edit ask for a program that is not tool calls only', async () => {
+  for (const mode of ['request', 'auto-edit'] as const) {
+    const gate = makeGate(mode)
+    const decision = await gate.decide(runCode('const x = 1; return x'))
+    assert.equal(decision.kind, 'ask', `mode=${mode}`)
+    assert.equal(decision.reason, `[other] Tool: run_code | Mode: ${mode} [code: const x = 1; return x]`)
+  }
+})
+
+test('ptc: yolo and off allow a pure-JS program without logging', async () => {
+  for (const mode of ['yolo', 'off'] as const) {
+    const gate = makeGate(mode)
+    assert.deepEqual(await gate.decide(runCode("rmSync('./dist', { recursive: true })")), { kind: 'allow' }, `mode=${mode}`)
+    assert.deepEqual(gate.logs, [], `mode=${mode} must not log a decision`)
+  }
+})
+
+test('ptc: a mixed program asks, and its write sub-call asks again (double prompt)', async () => {
+  const gate = makeGate('request')
+  const program = [
+    "const r = await tools.read({ file_path: 'README.md' })",
+    'if (r.lines.length > 100) {',
+    "  await tools.write({ file_path: 'big.txt', content: 'big' })",
+    '}',
+  ].join('\n')
+  const top = await gate.decide(runCode(program))
+  assert.equal(top.kind, 'ask')
+  assert.match(top.reason ?? '', /\[other\] Tool: run_code \| Mode: request/)
+  assert.match(top.reason ?? '', /\[code: const r = await tools\.read\(\{ file_path: 'README\.md' \}\) if \(r\.lines\.length > 100\) \{ await tools\.write\(\{ file_path: 'big\.txt', content: 'big' \}\) \}\]/)
+  // The double prompt: the program's own write sub-call still passes the
+  // family gate after the top-level ask.
+  const inner = await gate.decide(subCall('write', { path: 'big.txt', content: 'big' }))
+  assert.equal(inner.kind, 'ask')
+  assert.match(inner.reason ?? '', /\[args: big\.txt\]/)
+})
+
+test('ptc: a pure-JS program with a direct import asks', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide(runCode("import { rmSync } from 'node:fs'\nrmSync('./dist', { recursive: true })"))
+  assert.equal(decision.kind, 'ask')
+  assert.match(decision.reason ?? '', /\[code: import \{ rmSync \} from 'node:fs' rmSync\('\.\/dist', \{ recursive: true \}\)\]/)
+})
+
+test('ptc: dynamic member access falls off the whitelist and asks', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide(runCode("const f = globalThis['fe' + 'tch']\nawait f('https://example.com')"))
+  assert.equal(decision.kind, 'ask')
+})
+
+test('ptc: an unparseable program asks (fail closed)', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide(runCode('const const'))
+  assert.equal(decision.kind, 'ask')
+  assert.match(decision.reason ?? '', /\[code: const const\]/)
+})
+
+test('ptc: a program without readable code asks without a code suffix', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide({ name: 'run_code', arguments: { description: 'no code field' } })
+  assert.equal(decision.kind, 'ask')
+  assert.equal(decision.reason, '[other] Tool: run_code | Mode: request')
+  assert.ok(!(decision.reason ?? '').includes('[code:'), 'no readable code means no preview')
+  assert.ok(!(decision.reason ?? '').includes('[args:'), 'a top-level call is not a PTC sub-call')
+})
+
+test('ptc: a long program summary is capped with an ellipsis', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide(runCode(`rmSync('${'a'.repeat(400)}')`))
+  assert.equal(decision.kind, 'ask')
+  assert.ok((decision.reason ?? '').endsWith('…]'), 'the preview must end with the capped marker')
+  const preview = /\[code: (.*)\]$/u.exec(decision.reason ?? '')?.[1]
+  assert.ok(preview !== undefined && preview.length <= 201, `preview too long: ${preview?.length}`)
+})
+
+test('ptc: the top-level ask copy ships bilingual through displayReason', async () => {
+  const gate = makeGate('request')
+  const decision = await gate.decide(runCode('const x = 1; return x'))
+  assert.equal(decision.kind, 'ask')
+  assert.deepEqual(decision.displayReason, {
+    en: '[other] Tool: run_code | Mode: request [code: const x = 1; return x]',
+    zh: '[other] 工具: run_code | 模式: request [code: const x = 1; return x]',
+  })
+})
+
+test('ptc: smart routes the program through the five-step pipeline with the code as command', async () => {
+  // 1. The danger list hits before any LLM call: the program text is the command.
+  const dangerGate = makeGate('smart', { smartExtraDangerPatterns: ['rmSync'] })
+  const dangerous = await dangerGate.decide(runCode("rmSync('./dist', { recursive: true })"))
+  assert.equal(dangerous.kind, 'ask')
+  assert.match(dangerous.reason ?? '', /\[smart: pattern=rmSync\]/)
+  assert.match(dangerous.reason ?? '', /\[code: rmSync\('\.\/dist', \{ recursive: true \}\)\]/)
+
+  // 2. A benign program reaches the missing LLM seam and falls back to manual review.
+  const gate = makeGate('smart')
+  const benign = await gate.decide(runCode("console.log('no tools, no danger')"))
+  assert.equal(benign.kind, 'ask')
+  assert.match(benign.reason ?? '', /\[smart: llm-unavailable\]/)
+  assert.match(benign.reason ?? '', /\[code: console\.log\('no tools, no danger'\)\]/)
 })
 
 test('ptc: request mode asks for a write sub-call and shows its path', async () => {

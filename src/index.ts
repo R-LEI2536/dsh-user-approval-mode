@@ -58,6 +58,11 @@ import { matchReadOnlyGitCommand } from './read-only-git.js'
 import { registerApprovalShellSkill } from './approval-skill.js'
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
 import {
+  isToolCallsOnly,
+  runCodeProgramFromArguments,
+  runCodePreview,
+} from './run-code-gate.js'
+import {
   findAskPresetForSandbox,
 } from './permission-presets-helper.js'
 import {
@@ -128,7 +133,7 @@ export interface Config {
   shellTools?: string[]
   /** 只读工具名（默认 read/glob/grep/read_image/list_directory/todo_write + list_subagent_models/schedule_list/schedule_view/working_directory/list_agents/job_list/get_goal）；任何模式下免审。 */
   readOnlyTools?: string[]
-  /** 永远免审的控制/编排工具（默认 ask_user_question/exit_plan_mode + job_output/skill/subagent/subagent_fork/present/wait_agent/send_message/job_kill + team_task 四件套 + run_code + dsh-mnemon 的 17 个 mnemon_* 工具）。 */
+  /** 永远免审的控制/编排工具（默认 ask_user_question/exit_plan_mode + job_output/skill/subagent/subagent_fork/present/wait_agent/send_message/job_kill + team_task 四件套 + run_code + dsh-mnemon 的 17 个 mnemon_* 工具）。注意 run_code 例外：PTC 顶层调用按程序代码结构分类（纯 tools.* 子调用放行，其余 ask），见 ADR 0004。 */
   autoAllowTools?: string[]
   /** 未分类工具的策略：`ask`（默认，fail-safe）或 `allow`。 */
   unclassified?: 'ask' | 'allow'
@@ -201,7 +206,7 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .volatile(),
   autoAllowTools: Schema.array(Schema.string())
     .default(['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route'])
-    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting). `run_code` ships here because under the PTC agent preset it is the transport: its program\'s `tools.*` sub-calls still pass this same gate and are classified by their real tool name. Remove it from the list to gate the transport itself (one prompt per program). All 17 `mnemon_*` tools (the dsh-mnemon plugin) also ship here so memory-enabled deployments never prompt for them; delete the mnemon_* names to gate them instead.')
+    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting). `run_code` ships here because under the PTC agent preset it is the transport: its program\'s `tools.*` sub-calls still pass this same gate and are classified by their real tool name. Since the code-structure gate, a top-level `run_code` is itself classified first: a program of pure `tools.*` calls is allowed through to the sub-call gate, any other JS asks (with a code summary in the prompt); smart routes the program through the five-step pipeline. Remove it from the list to gate the transport itself (one prompt per program, no code inspection). All 17 `mnemon_*` tools (the dsh-mnemon plugin) also ship here so memory-enabled deployments never prompt for them; delete the mnemon_* names to gate them instead.')
     .volatile(),
   unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])
     .default('ask')
@@ -330,6 +335,15 @@ export function withPtcArgumentPreview(reason: string, exec: PtcPreviewExecution
   return preview === undefined ? reason : `${reason} [args: ${preview}]`
 }
 
+// PTC 顶层 run_code 的代码结构闸门（详见 src/run-code-gate.ts 与 ADR 0004）：
+// 纯 tools.* 程序放行交给子调用，其余 ask 并附 [code: …] 摘要。
+export {
+  isToolCallsOnly,
+  runCodeProgramFromArguments,
+  runCodePreview,
+  RUN_CODE_PREVIEW_MAX_CHARS,
+} from './run-code-gate.js'
+
 export function apply(ctx: Context, config: VolatileConfig): void {
   // 打包的 shell 写法 skill：注册进会话 skill 目录，随插件卸载/停用反注册。
   // 内容与注册逻辑见 src/approval-skill.ts；注册失败只跳过，不影响插件启动。
@@ -396,15 +410,18 @@ export function apply(ctx: Context, config: VolatileConfig): void {
 
   // 组装 ask 决定。默认模板双语：en 版进日志与英文 UI，zh 版只作弹窗展示
   // （宿主 displayReason 通道，0.2.1-rc.2 起支持；更旧宿主忽略该字段、退回英文
-  // reason）。自定义模板单语原样展示。`[smart: …]` / `[args: …]` 后缀对两个
-  // 语言版本同样生效——展示版与日志版必须携带同一份决策信息。
+  // reason）。自定义模板单语原样展示。`[smart: …]` / `[args: …]` / `[code: …]`
+  // 后缀对两个语言版本同样生效——展示版与日志版必须携带同一份决策信息。
   const askDecision = (
     exec: PtcPreviewExecution,
     mode: ApprovalMode,
     family: ToolFamily,
     smartDetail?: string,
+    programPreview?: string,
   ): { kind: 'ask'; reason: string; displayReason?: { en: string; zh: string } } => {
-    const suffix = smartDetail === undefined ? '' : ` [smart: ${smartDetail}]`
+    const suffix =
+      (smartDetail === undefined ? '' : ` [smart: ${smartDetail}]`)
+      + (programPreview === undefined ? '' : ` [code: ${programPreview}]`)
     const custom = cfgThunk().askReason
     if (custom !== undefined && custom !== DEFAULT_ASK_REASON) {
       return { kind: 'ask', reason: withPtcArgumentPreview(fillAskTemplate(custom, exec.name, mode, family) + suffix, exec) }
@@ -516,8 +533,40 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     if (agent === undefined) return decision
     // 在裁决点重新读取最新 settings，而不是 apply() 启动时的快照。
     const cfg = cfgThunk()
-    if (cfg.autoAllowTools?.includes(exec.name)) return decision
     const mode = effectiveMode(agent.session)
+
+    // ── PTC 顶层 run_code：按代码结构分类，不看身份 ──────────────────────
+    // run_code 仍在 autoAllowTools；分类插在「自动放行」返回之前，所以只
+    // 影响顶层调用（子调用带 parent，不进这里）。把它从名单删掉则本分支
+    // 失效，退回「每个程序弹一次」的逃生舱（family=other）。
+    if (exec.name === 'run_code' && exec.parent === undefined && cfg.autoAllowTools?.includes('run_code')) {
+      const code = runCodeProgramFromArguments(exec.arguments)
+      const preview = code === undefined ? undefined : runCodePreview(code)
+      if (mode === 'smart') {
+        // 五步流水线，code 作为 command（危险清单 → 只读 git 快路径 →
+        // 会话记忆 → LLM → 兜底），与 shell 同构；smart 不是硬边界。
+        const verdict = await smartEvaluator(exec, agent.session)
+        if (verdict.kind === 'allow') {
+          if (verdict.source === 'read-only-git') {
+            logReadOnlyGitAllow(verdict.label)
+            return { kind: 'allow' }
+          }
+          logSmartDecision('allow', `detail=${verdict.source}${modelSuffix(verdict.selection)}`)
+          return { kind: 'allow' }
+        }
+        logSmartDecision('ask', `detail=${verdict.detail}${modelSuffix(verdict.selection)}`)
+        return askDecision(exec, mode, familyOf(exec.name), verdict.detail, preview)
+      }
+      if (mode === 'request' || mode === 'auto-edit') {
+        // 语法白名单：纯 tools.* 调用交给子调用闸门；其余（含解析失败、
+        // 不可读的 code）一律 ask，弹窗带 [code: …] 单行摘要。
+        if (code !== undefined && isToolCallsOnly(code)) return decision
+        return askDecision(exec, mode, familyOf(exec.name), undefined, preview)
+      }
+      // yolo / off：不查，原样放行。
+      return decision
+    }
+    if (cfg.autoAllowTools?.includes(exec.name)) return decision
     const family = familyOf(exec.name)
     if (family === 'readonly') return decision
 

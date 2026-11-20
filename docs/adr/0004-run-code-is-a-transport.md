@@ -1,6 +1,7 @@
 # `run_code` is the PTC transport: allow the program, gate every sub-call
 
-Status: accepted.
+Status: accepted; revised 2026-11-20 — the top-level call is now classified by
+its program's code structure (see "Revision" at the end).
 
 Paths below without a `packages/` prefix are in this repository; a
 `packages/…` path refers to the DSH host checkout this plugin targets
@@ -112,3 +113,62 @@ to the sub-call's ask reason.
 - The terminology lives in CONTEXT.md under **PTC transport**, **PTC sub-call**
   and **PTC argument summary**, and both READMEs state the transport rules and
   the direct-Node limitation under Known Limitations.
+
+## Revision 2026-11-20: classify the top-level program by its code structure
+
+The accepted limitation above — a program's direct Node effects never reach
+the gate, so request mode under PTC is not per-write approval — had one
+consequence the design page (`docs/2026-11-07-run-code-approval-flow.html`)
+refused to leave open: `rmSync('./dist')` in a program with zero `tools.*`
+calls executes silently, because the transport is auto-allowed and nothing
+else sees the code.
+
+We decided: **the top-level `run_code` call is classified by the program's
+code, not by its identity.** `run_code` stays in `autoAllowTools`; a
+dedicated branch in the gate runs before the auto-allow return and only for
+top-level calls (`exec.parent === undefined`):
+
+- **request / auto-edit**: `isToolCallsOnly(code)` (`src/run-code-gate.ts`,
+  parsed with the `acorn` dependency this revision adds) allows a program
+  whose every statement is a `tools.*` call, a variable receiving one, or a
+  `return` of trusted values — the actions are the sub-calls, which re-enter
+  the gate unchanged. Any other JS asks, with a one-line `[code: …]` summary
+  (collapsed, capped at 200 chars) appended after the (bilingual) ask copy,
+  because the host dialog shows no command block for `run_code`. Unparseable
+  or missing code asks too: the whitelist recognizes, it does not guess.
+- **smart**: the program text rides the existing five-step pipeline as the
+  classifier's command (`commandFromArguments` gains a `run_code` branch, the
+  session-memory key follows), so smart keeps its LLM seam and its
+  fail-safes. Smart does NOT use the whitelist — it is not a hard boundary
+  and was never promised to be.
+- **yolo / off**: unchanged, no inspection.
+
+The whitelist boundary is written down in `test/run-code-gate.test.ts`:
+trusted values are literals, identifiers (except the ambient `process` /
+`globalThis`), non-computed member chains, and object/array literals of
+trusted values; computed (dynamic) member access, arithmetic, template
+assembly, branching, imports, and every unrecognized construct ask. Reading
+a result (`r.lines.length`) is part of a tool call; building strings is not.
+
+Costs, accepted explicitly:
+
+- **Double prompt.** A mixed program asks at the top level and its gated
+  sub-calls ask again. Skipping the inner prompts after a top-level approval
+  would need an "already approved" token threaded through sub-call
+  decisions — deliberately deferred, not forgotten.
+- **Noise.** Honest orchestrating programs with plain JS logic now ask under
+  the strict modes. That is the price of closing the silent-`rmSync` hole
+  with a static check; the alternative was leaving it open.
+- **Smart still leaky** (danger list is shell-biased, LLM can be fooled),
+  and the sandbox remains the only hard boundary — the whitelist is a
+  syntactic classifier, not a security control.
+- **The escape hatch changed shape**: removing `run_code` from
+  `autoAllowTools` now restores one blind prompt per program with NO code
+  inspection (the branch requires the autoAllowTools entry), which is
+  worse than the default flow and kept only for deployers who want it.
+
+Test coverage: `test/gate-ptc.test.ts` pins the mode matrix (tools-only
+allow, non-tools ask with `[code: …]`, yolo/off allow, smart danger-list and
+`llm-unavailable` fallbacks, the double prompt, the escape hatch, the
+bilingual top-level ask, preview capping) and `test/run-code-gate.test.ts`
+pins the whitelist boundary itself.

@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@rh854lkjd/dsh-tool-list-dir": ">=0.2.7",
+    "acorn": "^8.19.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {

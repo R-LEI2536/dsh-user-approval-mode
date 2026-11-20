@@ -69,14 +69,14 @@ git -C /path/to/repo status --short
 
 ## 6. PTC preset sessions
 
-In a session on the `ptc` agent preset the model can call only `run_code`; the other tools are reachable only as `tools.*` bindings inside the program. The gate still applies, one level down:
+In a session on the `ptc` agent preset the model can call only `run_code`; the other tools are reachable only as `tools.*` bindings inside the program. The gate applies at both levels:
 
-- `run_code` itself is the transport and does not prompt. Do not read that as licence for what the program does.
+- A top-level `run_code` passes without a prompt only when the program is pure `tools.*` calls plus the variables and `return` that receive their results. Any other JS — arithmetic, branching, imports, dynamic member access, or syntax the whitelist does not recognize — makes the whole program prompt under request and auto-edit; smart mode sends the code to the classifier instead. A top-level prompt carries a `[code: …]` summary of the program.
 - Every `tools.write` / `tools.bash` / `tools.read` sub-call passes exactly the gate described above, under its real tool name. So the same rules apply: prefer `tools.read` / `tools.glob` / `tools.grep` over `tools.bash`, and keep `tools.bash` command text inside the read-only git grammar.
-- A PTC sub-call's approval prompt adds a `[args: …]` summary (the command or path, one line, up to 200 characters) because the host dialog cannot render a nested call's arguments. Read it before approving.
+- A PTC sub-call's approval prompt adds a `[args: …]` summary (the command or path, one line, up to 200 characters) because the host dialog cannot render a nested call's arguments. Read it before approving. A mixed program that prompted at the top level prompts again per gated sub-call; that double prompt is by design, not a bug to code around.
 - A rejected sub-call raises `ToolCallError` for that binding only. Catch it, do not retry the same call in another shape, and report what was not verified.
 - Approval prompts wait inside the `run_code` run budget (default 120 s, capped at 600 s). Batch a program's gated calls instead of queueing many prompts, or the run can end while it waits.
-- A direct `import('node:fs')` / `node:child_process` inside the program bypasses this gate entirely and is bounded only by the sandbox. Do not use it to route around a prompt.
+- A direct `import('node:fs')` / `node:child_process` inside the program skips the sub-call gate and is bounded only by the sandbox. Under request / auto-edit it now stops the whole program at a top-level prompt instead of running silently — do not use it to route around a prompt.
 
 ## 7. Self-check
 

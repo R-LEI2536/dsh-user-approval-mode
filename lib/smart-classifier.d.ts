@@ -94,8 +94,11 @@ export declare function findSmartDangerMatch(text: string, patterns: readonly Co
 export declare function parseSmartClassifierVerdict(text: string): 'approve' | 'ask' | undefined;
 /** Pull a readable command string out of `exec.arguments`. DSH has already
  *  parsed the JSON; we just take `.command` if it looks like the tool
- *  schema's expected `{ command: string }` shape, otherwise stringify. */
-export declare function commandFromArguments(args: unknown): string | undefined;
+ *  schema's expected `{ command: string }` shape, otherwise stringify.
+ *  A top-level `run_code` call carries its program in `.code` instead: the
+ *  classifier evidence, the read-only git fast-path, and the session-memory
+ *  key all read the program text, not the wrapper JSON. */
+export declare function commandFromArguments(args: unknown, toolName?: string): string | undefined;
 /** Result of reading the newest genuine user message: the joined text (or
  *  null when there is no message / it is image-only), plus a `tooLong`
  *  flag that fires when the budget is exceeded. Mirrors the

@@ -158,10 +158,17 @@ export function parseSmartClassifierVerdict(text: string): 'approve' | 'ask' | u
 
 /** Pull a readable command string out of `exec.arguments`. DSH has already
  *  parsed the JSON; we just take `.command` if it looks like the tool
- *  schema's expected `{ command: string }` shape, otherwise stringify. */
-export function commandFromArguments(args: unknown): string | undefined {
+ *  schema's expected `{ command: string }` shape, otherwise stringify.
+ *  A top-level `run_code` call carries its program in `.code` instead: the
+ *  classifier evidence, the read-only git fast-path, and the session-memory
+ *  key all read the program text, not the wrapper JSON. */
+export function commandFromArguments(args: unknown, toolName?: string): string | undefined {
   if (args === undefined) return undefined
   if (args !== null && typeof args === 'object' && !Array.isArray(args)) {
+    if (toolName === 'run_code') {
+      const code = (args as Record<string, unknown>).code
+      if (typeof code === 'string') return code
+    }
     const candidate = (args as Record<string, unknown>).command
     if (typeof candidate === 'string') return candidate
   }
@@ -301,7 +308,7 @@ export function createSmartSessionMemory(ttlMs: number): SmartSessionMemory {
  * not have that hook here, so we key on the extracted command string
  * (the same projection used to build classifier evidence). */
 export function smartMemoryKey(toolName: string, args: unknown): string {
-  const content = commandFromArguments(args) ?? String(args)
+  const content = commandFromArguments(args, toolName) ?? String(args)
   return createHash('sha256').update(`${toolName}\n${content}`).digest('hex')
 }
 
@@ -585,7 +592,7 @@ export function createSmartShellEvaluator(options: {
   const { config, patterns, llm, defaultModel, memory, lifetimeSignal, reasonForExec } = options
 
   return async (exec, session) => {
-    const command = commandFromArguments(exec.arguments)
+    const command = commandFromArguments(exec.arguments, exec.name)
     const toolArgumentsString = argumentsToString(exec.arguments)
     const matchText = `${reasonForExec?.(exec.name) ?? ''}\n${toolArgumentsString ?? ''}`
     const danger = findSmartDangerMatch(matchText, patterns)
