@@ -3,17 +3,26 @@
  * structure, not by its identity.
  *
  * `run_code` stays in `autoAllowTools` (the transport contract, ADR 0004),
- * but the top-level call is no longer allowed blindly. A program whose
- * every statement is a `tools.*` call (plus the variables and `return`
- * that receive its results) is allowed through — the sub-calls re-enter
- * this same gate under their real names. Anything else — arithmetic,
- * branching, imports, dynamic member access, or syntax the whitelist
- * does not recognize — asks the user, because a top-level dialog cannot
- * show the program and a silent `fs.rmSync` is exactly the hole this
- * closes (design page: docs/2026-11-07-run-code-approval-flow.html).
+ * but the top-level call is no longer allowed blindly. The gate recognizes
+ * statements in two grammars, mirroring the read-only git fast-path posture
+ * (ADR 0003): a strict one and a widened one.
  *
- * The whitelist is deliberately strict: it recognizes rather than guesses.
- * An unrecognized construct fails closed to ask.
+ * - Strict: every statement is a `tools.*` call, a variable receiving one,
+ *   or a `return` of trusted values. Allowed in every gated mode.
+ * - Widened (pure expressions, on by default via `runCodePureExpressions`):
+ *   statements may additionally be call-free pure computation — arithmetic,
+ *   comparisons, template assembly, literal-index reads — over literals,
+ *   received results, and previously computed values. Such a program cannot
+ *   touch anything outside its own memory: imports, direct calls, and
+ *   dynamic member access stay out of both grammars.
+ *
+ * Anything the grammar does not recognize — branching, loops, functions,
+ * imports, ANY call that is not `tools.*`, dynamic member access, or
+ * unparseable source — asks under request/auto-edit and falls through to
+ * the smart pipeline's later steps under smart. The whitelist recognizes,
+ * it does not guess; failure is closed.
+ *
+ * Design page: docs/2026-11-07-run-code-approval-flow.html.
  */
 /** Longest code summary appended to a top-level `run_code` ask reason. */
 export declare const RUN_CODE_PREVIEW_MAX_CHARS = 200;
@@ -34,17 +43,33 @@ export declare function runCodeProgramFromArguments(args: unknown): string | und
  * session log's tool-call event.
  */
 export declare function runCodePreview(code: string): string;
+/** What the code-structure gate concluded about one top-level program. */
+export type RunCodeGateVerdict = 
+/** Every statement is a strict-grammar form. Allowed in every gated mode. */
+'tools-only'
+/** Recognized, but at least one statement (or call argument) uses the
+ *  widened pure-expression class. Allowed when `runCodePureExpressions`
+ *  is on; asks otherwise. */
+ | 'tools-and-pure'
+/** Recognized, call-free pure computation, no `tools.*` call at all. */
+ | 'pure'
+/** Something outside both grammars (or unparseable source): ask. */
+ | 'ask';
 /**
- * Decide whether a `run_code` program is "tool calls only".
+ * Classify a `run_code` program by its code structure.
  *
- * True means the program has no effect the plugin cannot see: every
- * statement is a `tools.*` call (each re-enters the gate as a sub-call),
- * a variable receiving one, or a `return` of trusted values. False means
- * ask — including unparseable code.
- *
- * This is a syntactic whitelist, NOT a security boundary: it exists to
- * keep the strict modes quiet for honest orchestrating programs. The hard
+ * This is a syntactic recognizer, NOT a security boundary: it exists to
+ * keep the gated modes quiet for honest programs (tool orchestration and
+ * pure computation) while everything unrecognizable fails closed to a
+ * prompt (request/auto-edit) or the smart pipeline's later steps. The hard
  * boundary under PTC remains the sandbox (ADR 0004).
  */
-export declare function isToolCallsOnly(code: string): boolean;
+export declare function runCodeGateVerdict(code: string): RunCodeGateVerdict;
+/**
+ * Whether a verdict is an allow under the configured grammar width.
+ * @param verdict - the classification of the program.
+ * @param pureExpressions - the `runCodePureExpressions` switch: `true`
+ * (default) admits the widened pure-expression class.
+ */
+export declare function runCodeGateAllows(verdict: RunCodeGateVerdict, pureExpressions: boolean): boolean;
 //# sourceMappingURL=run-code-gate.d.ts.map

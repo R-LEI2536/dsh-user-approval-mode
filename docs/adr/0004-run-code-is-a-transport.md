@@ -126,29 +126,48 @@ else sees the code.
 We decided: **the top-level `run_code` call is classified by the program's
 code, not by its identity.** `run_code` stays in `autoAllowTools`; a
 dedicated branch in the gate runs before the auto-allow return and only for
-top-level calls (`exec.parent === undefined`):
+top-level calls (`exec.parent === undefined`). `src/run-code-gate.ts`
+(parsed with the `acorn` dependency this revision adds) returns one of four
+verdicts: `tools-only`, `tools-and-pure`, `pure`, `ask`.
 
-- **request / auto-edit**: `isToolCallsOnly(code)` (`src/run-code-gate.ts`,
-  parsed with the `acorn` dependency this revision adds) allows a program
-  whose every statement is a `tools.*` call, a variable receiving one, or a
-  `return` of trusted values — the actions are the sub-calls, which re-enter
-  the gate unchanged. Any other JS asks, with a one-line `[code: …]` summary
-  (collapsed, capped at 200 chars) appended after the (bilingual) ask copy,
-  because the host dialog shows no command block for `run_code`. Unparseable
-  or missing code asks too: the whitelist recognizes, it does not guess.
+- **request / auto-edit**: `tools-only` always allows — the actions are the
+  sub-calls, which re-enter the gate unchanged — and `pure` /
+  `tools-and-pure` allow while the `runCodePureExpressions` switch is on
+  (default, settings page, volatile). Anything else asks, with a one-line
+  `[code: …]` summary (collapsed, capped at 200 chars) appended after the
+  (bilingual) ask copy, because the host dialog shows no command block for
+  `run_code`. Unparseable or missing code asks too: the grammar recognizes,
+  it does not guess.
 - **smart**: the program text rides the existing five-step pipeline as the
   classifier's command (`commandFromArguments` gains a `run_code` branch, the
-  session-memory key follows), so smart keeps its LLM seam and its
-  fail-safes. Smart does NOT use the whitelist — it is not a hard boundary
-  and was never promised to be.
+  session-memory key follows), and the SAME verdict is a fast-allow inside
+  it, positioned exactly like the read-only git fast-path (ADR 0003): after
+  the danger list (a configured pattern can never be bypassed by the
+  grammar), before memory and the LLM. A recognized program needs neither —
+  no LLM call, and the source never leaves the machine. Unrecognized
+  programs fall through untouched, so smart keeps its fail-safes.
 - **yolo / off**: unchanged, no inspection.
 
-The whitelist boundary is written down in `test/run-code-gate.test.ts`:
-trusted values are literals, identifiers (except the ambient `process` /
-`globalThis`), non-computed member chains, and object/array literals of
-trusted values; computed (dynamic) member access, arithmetic, template
-assembly, branching, imports, and every unrecognized construct ask. Reading
-a result (`r.lines.length`) is part of a tool call; building strings is not.
+Every allow from the gate logs one greppable line,
+`[dsh-user-approval[run-code-gate]] decision=allow detail=<verdict>`, the
+same posture and convention as the read-only git fast-path it mirrors.
+
+The grammar has two widths, both written down in
+`test/run-code-gate.test.ts`:
+
+- **Strict** (always allowed): every statement is a `tools.*` call, a
+  variable receiving one, or a `return` of trusted values — literals,
+  identifiers (except the ambient `process` / `globalThis`), non-computed
+  member chains, and object/array literals of trusted values. Reading a
+  result (`r.lines.length`) is part of a tool call.
+- **Widened** (per the switch): statements may additionally be call-free
+  pure computation over the program's own data — arithmetic, comparisons,
+  conditionals, template assembly, spreads, and member reads with a
+  LITERAL index. Such a program cannot read files, reach the network, or
+  call anything: imports, any call that is not `tools.*`, `new`, tagged
+  templates, dynamic imports, assignment, destructuring, branching, loops,
+  functions, classes, and dynamic member access stay outside BOTH widths
+  and ask.
 
 Costs, accepted explicitly:
 
@@ -156,19 +175,25 @@ Costs, accepted explicitly:
   sub-calls ask again. Skipping the inner prompts after a top-level approval
   would need an "already approved" token threaded through sub-call
   decisions — deliberately deferred, not forgotten.
-- **Noise.** Honest orchestrating programs with plain JS logic now ask under
-  the strict modes. That is the price of closing the silent-`rmSync` hole
-  with a static check; the alternative was leaving it open.
-- **Smart still leaky** (danger list is shell-biased, LLM can be fooled),
-  and the sandbox remains the only hard boundary — the whitelist is a
-  syntactic classifier, not a security control.
+- **Noise, paid down.** The strict width alone would ask every honest
+  program that computes anything between calls; the widened width keeps
+  that noise off by default while the switch lets a deployer restore the
+  strict boundary in one setting. What still asks under the strict modes
+  is code the grammar cannot vouch for — the price of closing the
+  silent-`rmSync` hole with a static check.
+- **Smart still leaky for unrecognized programs** (danger list is
+  shell-biased, LLM can be fooled), and the sandbox remains the only hard
+  boundary — the grammar is a syntactic classifier, not a security control.
 - **The escape hatch changed shape**: removing `run_code` from
   `autoAllowTools` now restores one blind prompt per program with NO code
   inspection (the branch requires the autoAllowTools entry), which is
   worse than the default flow and kept only for deployers who want it.
 
-Test coverage: `test/gate-ptc.test.ts` pins the mode matrix (tools-only
-allow, non-tools ask with `[code: …]`, yolo/off allow, smart danger-list and
+Test coverage: `test/gate-ptc.test.ts` pins the mode matrix (tools-only and
+pure allows with their gate logs, the switch restoring the strict grammar,
+non-grammar asks with `[code: …]`, yolo/off allow, smart danger-list and
 `llm-unavailable` fallbacks, the double prompt, the escape hatch, the
-bilingual top-level ask, preview capping) and `test/run-code-gate.test.ts`
-pins the whitelist boundary itself.
+bilingual top-level ask, preview capping), `test/smart-shell-evaluator.test.ts`
+pins the pipeline integration (fast-allow before the LLM, danger list first,
+fall-through for unrecognized programs), and `test/run-code-gate.test.ts`
+pins the grammar boundary itself.

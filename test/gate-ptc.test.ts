@@ -8,17 +8,13 @@
  * pipeline, so the gate never sees one. These tests pin that contract as the
  * plugin implements it:
  *
- * - `run_code` is transport: auto-allowed in every mode, never classified;
- * - sub-calls are classified by family exactly like native calls;
- * - a PTC sub-call's ask reason carries an argument summary because the host
- *   approval dialog cannot show a nested call's arguments;
- * - the default ask copy ships bilingual: en is the logged reason, zh rides
- *   the host displayReason channel for zh UIs; a custom template stays verbatim;
- * - removing `run_code` from `autoAllowTools` restores the per-program prompt.
- *
- * - `run_code` is transport: a tools-only program is auto-allowed in every
- *   mode; any other JS asks in request/auto-edit (with a `[code: …]`
- *   summary) and rides the smart five-step pipeline in smart mode;
+ * - `run_code` is transport, classified by its program's code structure:
+ *   a tools-only program is allowed in every mode (with a greppable gate
+ *   log), call-free pure computation is allowed per the
+ *   `runCodePureExpressions` switch, anything else asks in
+ *   request/auto-edit (with a `[code: …]` summary) and rides the smart
+ *   five-step pipeline in smart mode (the grammar being a fast-allow
+ *   inside it, after the danger list);
  * - sub-calls are classified by family exactly like native calls;
  * - a PTC sub-call's ask reason carries an argument summary because the host
  *   approval dialog cannot show a nested call's arguments;
@@ -106,26 +102,67 @@ const subCall = (name: string, args: unknown, n = 1) => ({
   rootCallId: 'call-1',
 })
 
-test('ptc: a tools-only program is allowed as transport in the non-smart modes', async () => {
-  for (const mode of ['request', 'auto-edit', 'yolo', 'off'] as const) {
+test('ptc: a tools-only program is allowed as transport in every mode, with a gate log', async () => {
+  // request / auto-edit / smart all allow the program, each leaving one
+  // greppable allow line; yolo / off allow without inspecting or logging.
+  for (const mode of ['request', 'auto-edit', 'smart'] as const) {
+    const gate = makeGate(mode)
+    assert.deepEqual(await gate.decide(runCode()), { kind: 'allow' }, `mode=${mode}`)
+    assert.deepEqual(gate.logs, [`[dsh-user-approval[run-code-gate]] decision=allow detail=tools-only`], `mode=${mode} logs the gate allow`)
+  }
+  for (const mode of ['yolo', 'off'] as const) {
     const gate = makeGate(mode)
     assert.deepEqual(await gate.decide(runCode()), { kind: 'allow' }, `mode=${mode}`)
     assert.deepEqual(gate.logs, [], `mode=${mode} must not log a decision for the transport`)
   }
-  // Smart does not use the whitelist: the program rides the five-step
-  // pipeline, and a missing LLM seam fails safe to manual review.
-  const smart = makeGate('smart')
-  const smartDecision = await smart.decide(runCode())
-  assert.equal(smartDecision.kind, 'ask')
-  assert.match(smartDecision.reason ?? '', /\[smart: llm-unavailable\]/)
 })
 
-test('ptc: request and auto-edit ask for a program that is not tool calls only', async () => {
+test('ptc: a pure program is allowed in every mode via the width switch', async () => {
+  for (const mode of ['request', 'auto-edit', 'smart'] as const) {
+    const gate = makeGate(mode)
+    assert.deepEqual(await gate.decide(runCode('const x = 1 + 1\nreturn x')), { kind: 'allow' }, `mode=${mode}`)
+    assert.deepEqual(gate.logs, [`[dsh-user-approval[run-code-gate]] decision=allow detail=pure`], `mode=${mode} logs the gate allow`)
+  }
+  for (const mode of ['yolo', 'off'] as const) {
+    const gate = makeGate(mode)
+    assert.deepEqual(await gate.decide(runCode('const x = 1 + 1\nreturn x')), { kind: 'allow' }, `mode=${mode}`)
+    assert.deepEqual(gate.logs, [], `mode=${mode} must not log a decision`)
+  }
+})
+
+test('ptc: turning the width switch off restores the strict grammar', async () => {
+  for (const mode of ['request', 'auto-edit'] as const) {
+    const gate = makeGate(mode, { runCodePureExpressions: false })
+    // A pure program asks again…
+    const pure = await gate.decide(runCode('const x = 1 + 1\nreturn x'))
+    assert.equal(pure.kind, 'ask', `mode=${mode}`)
+    assert.match(pure.reason ?? '', /\[code: const x = 1 \+ 1 return x\]/)
+    // …and a strict tools-only program still passes.
+    const toolsOnly = await gate.decide(runCode())
+    assert.equal(toolsOnly.kind, 'allow', `mode=${mode}`)
+    assert.deepEqual(gate.logs, [`[dsh-user-approval[run-code-gate]] decision=allow detail=tools-only`])
+  }
+  // Smart: the widened grammar is closed, so the pure program falls
+  // through to the (missing) LLM seam and fails safe; tools-only still
+  // fast-allows.
+  const smart = makeGate('smart', { runCodePureExpressions: false })
+  const pureSmart = await smart.decide(runCode('const x = 1 + 1\nreturn x'))
+  assert.equal(pureSmart.kind, 'ask')
+  assert.match(pureSmart.reason ?? '', /\[smart: llm-unavailable\]/)
+  const toolsOnlySmart = await smart.decide(runCode())
+  assert.deepEqual(toolsOnlySmart, { kind: 'allow' })
+  assert.deepEqual(smart.logs, [
+    '[dsh-user-approval[smart]] decision=ask detail=llm-unavailable',
+    '[dsh-user-approval[run-code-gate]] decision=allow detail=tools-only',
+  ])
+})
+
+test('ptc: request and auto-edit ask for a program outside both grammars', async () => {
   for (const mode of ['request', 'auto-edit'] as const) {
     const gate = makeGate(mode)
-    const decision = await gate.decide(runCode('const x = 1; return x'))
+    const decision = await gate.decide(runCode("rmSync('./dist', { recursive: true })"))
     assert.equal(decision.kind, 'ask', `mode=${mode}`)
-    assert.equal(decision.reason, `[other] Tool: run_code | Mode: ${mode} [code: const x = 1; return x]`)
+    assert.equal(decision.reason, `[other] Tool: run_code | Mode: ${mode} [code: rmSync('./dist', { recursive: true })]`)
   }
 })
 
@@ -196,11 +233,11 @@ test('ptc: a long program summary is capped with an ellipsis', async () => {
 
 test('ptc: the top-level ask copy ships bilingual through displayReason', async () => {
   const gate = makeGate('request')
-  const decision = await gate.decide(runCode('const x = 1; return x'))
+  const decision = await gate.decide(runCode("rmSync('./dist', { recursive: true })"))
   assert.equal(decision.kind, 'ask')
   assert.deepEqual(decision.displayReason, {
-    en: '[other] Tool: run_code | Mode: request [code: const x = 1; return x]',
-    zh: '[other] 工具: run_code | 模式: request [code: const x = 1; return x]',
+    en: "[other] Tool: run_code | Mode: request [code: rmSync('./dist', { recursive: true })]",
+    zh: "[other] 工具: run_code | 模式: request [code: rmSync('./dist', { recursive: true })]",
   })
 })
 

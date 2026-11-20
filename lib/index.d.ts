@@ -83,6 +83,11 @@ export interface Config {
      *  单条只读 git 调用在 request/auto-edit/smart 下免审；关闭则恢复
      *  「shell 一律弹窗」。 */
     readOnlyGitCommands?: boolean;
+    /** PTC 顶层 run_code 宽语法开关（默认 true，设置页可改）：放行「无调用的
+     *  纯表达式」语句（算术/比较/模板拼接/字面量下标取值）。关闭则恢复严格
+     *  语法——只有 tools.* 调用、接结果变量与受信值 return 免弹。对应
+     *  run-code-gate 的 tools-and-pure / pure 两类 verdict。 */
+    runCodePureExpressions?: boolean;
     /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
     sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>;
     /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。缺省走内置双语模板：zh UI 显示中文版，日志记英文。 */
@@ -117,6 +122,7 @@ export interface VolatileConfig {
     autoAllowTools: Volatile<string[]>;
     unclassified: 'ask' | 'allow';
     readOnlyGitCommands: Volatile<boolean>;
+    runCodePureExpressions: Volatile<boolean>;
     sandboxDefaults: Volatile<Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>>;
     askReason: Volatile<string>;
     smartProvider: Volatile<string | null>;
@@ -174,6 +180,6 @@ export declare function ptcArgumentPreview(exec: PtcPreviewExecution): string | 
  * @returns The same reason for native calls; the annotated reason for PTC sub-calls.
  */
 export declare function withPtcArgumentPreview(reason: string, exec: PtcPreviewExecution): string;
-export { isToolCallsOnly, runCodeProgramFromArguments, runCodePreview, RUN_CODE_PREVIEW_MAX_CHARS, } from './run-code-gate.js';
+export { runCodeGateAllows, runCodeGateVerdict, runCodeProgramFromArguments, runCodePreview, RUN_CODE_PREVIEW_MAX_CHARS, type RunCodeGateVerdict, } from './run-code-gate.js';
 export declare function apply(ctx: Context, config: VolatileConfig): void;
 //# sourceMappingURL=index.d.ts.map

@@ -58,7 +58,8 @@ import { matchReadOnlyGitCommand } from './read-only-git.js'
 import { registerApprovalShellSkill } from './approval-skill.js'
 import { DEFAULT_SMART_CLASSIFIER_PROMPT } from './smart-prompt.js'
 import {
-  isToolCallsOnly,
+  runCodeGateAllows,
+  runCodeGateVerdict,
   runCodeProgramFromArguments,
   runCodePreview,
 } from './run-code-gate.js'
@@ -141,6 +142,11 @@ export interface Config {
    *  单条只读 git 调用在 request/auto-edit/smart 下免审；关闭则恢复
    *  「shell 一律弹窗」。 */
   readOnlyGitCommands?: boolean
+  /** PTC 顶层 run_code 宽语法开关（默认 true，设置页可改）：放行「无调用的
+   *  纯表达式」语句（算术/比较/模板拼接/字面量下标取值）。关闭则恢复严格
+   *  语法——只有 tools.* 调用、接结果变量与受信值 return 免弹。对应
+   *  run-code-gate 的 tools-and-pure / pure 两类 verdict。 */
+  runCodePureExpressions?: boolean
   /** 切到各模式时联动写入的 sandbox 默认；`off` 写组合默认。 */
   sandboxDefaults?: Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>
   /** 审批 ask 的 reason 模板，支持 {tool}/{mode}/{family} 插值。缺省走内置双语模板：zh UI 显示中文版，日志记英文。 */
@@ -176,6 +182,7 @@ export interface VolatileConfig {
   autoAllowTools: Volatile<string[]>
   unclassified: 'ask' | 'allow'
   readOnlyGitCommands: Volatile<boolean>
+  runCodePureExpressions: Volatile<boolean>
   sandboxDefaults: Volatile<Partial<Record<'request' | 'auto-edit' | 'smart' | 'yolo', 'read-only' | 'workspace-write' | 'danger-full-access'>>>
   askReason: Volatile<string>
   smartProvider: Volatile<string | null>
@@ -206,7 +213,7 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
     .volatile(),
   autoAllowTools: Schema.array(Schema.string())
     .default(['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route'])
-    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting). `run_code` ships here because under the PTC agent preset it is the transport: its program\'s `tools.*` sub-calls still pass this same gate and are classified by their real tool name. Since the code-structure gate, a top-level `run_code` is itself classified first: a program of pure `tools.*` calls is allowed through to the sub-call gate, any other JS asks (with a code summary in the prompt); smart routes the program through the five-step pipeline. Remove it from the list to gate the transport itself (one prompt per program, no code inspection). All 17 `mnemon_*` tools (the dsh-mnemon plugin) also ship here so memory-enabled deployments never prompt for them; delete the mnemon_* names to gate them instead.')
+    .description('Tools that bypass approval entirely, regardless of family. Overlapping with any family list is harmless (redundant, not conflicting). `run_code` ships here because under the PTC agent preset it is the transport: its program\'s `tools.*` sub-calls still pass this same gate and are classified by their real tool name. Since the code-structure gate, a top-level `run_code` is itself classified first: a program of pure `tools.*` calls — and, per the runCodePureExpressions switch, call-free pure computation — is allowed through to the sub-call gate, any other JS asks (with a code summary in the prompt); smart routes the program through the five-step pipeline, with the same verdict as a fast-allow before the LLM. Remove it from the list to gate the transport itself (one prompt per program, no code inspection). All 17 `mnemon_*` tools (the dsh-mnemon plugin) also ship here so memory-enabled deployments never prompt for them; delete the mnemon_* names to gate them instead.')
     .volatile(),
   unclassified: Schema.union(['ask', 'allow'] as ('ask' | 'allow')[])
     .default('ask')
@@ -214,6 +221,10 @@ export const Config: Schema<Config, VolatileConfig> = Schema.object({
   readOnlyGitCommands: Schema.boolean()
     .default(true)
     .description('Auto-allow a single strictly-parsed read-only git command (git status, git log, git diff, …) in the shell family instead of prompting. Turn it off to restore "shell always asks" under request and auto-edit. See docs/adr/0003-read-only-command-fast-path.md.')
+    .volatile(),
+  runCodePureExpressions: Schema.boolean()
+    .default(true)
+    .description('Allow call-free pure expressions (arithmetic, comparisons, template assembly, literal-index reads) in a top-level run_code program without prompting, under request/auto-edit and as a fast-allow inside the smart pipeline (after the danger list, before the LLM). Turn it off to restore the strict grammar: only tools.* calls, result variables, and returns of trusted values pass. Mirrors readOnlyGitCommands in shape. See docs/adr/0004-run-code-is-a-transport.md.')
     .volatile(),
   sandboxDefaults: Schema.dict(Schema.union(['read-only', 'workspace-write', 'danger-full-access'] as ('read-only' | 'workspace-write' | 'danger-full-access')[]))
     .default({
@@ -336,12 +347,15 @@ export function withPtcArgumentPreview(reason: string, exec: PtcPreviewExecution
 }
 
 // PTC 顶层 run_code 的代码结构闸门（详见 src/run-code-gate.ts 与 ADR 0004）：
-// 纯 tools.* 程序放行交给子调用，其余 ask 并附 [code: …] 摘要。
+// 严格语法（纯 tools.* 程序）总是放行交给子调用；宽语法（无调用的纯表达式）
+// 由 runCodePureExpressions 开关控制；其余 ask 并附 [code: …] 摘要。
 export {
-  isToolCallsOnly,
+  runCodeGateAllows,
+  runCodeGateVerdict,
   runCodeProgramFromArguments,
   runCodePreview,
   RUN_CODE_PREVIEW_MAX_CHARS,
+  type RunCodeGateVerdict,
 } from './run-code-gate.js'
 
 export function apply(ctx: Context, config: VolatileConfig): void {
@@ -365,6 +379,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     autoAllowTools: [...config.autoAllowTools.get()],
     unclassified: config.unclassified,
     readOnlyGitCommands: config.readOnlyGitCommands.get(),
+    runCodePureExpressions: config.runCodePureExpressions.get(),
     sandboxDefaults: { ...config.sandboxDefaults.get() },
     askReason: config.askReason.get(),
     smartProvider: config.smartProvider.get(),
@@ -470,6 +485,17 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     }
   }
 
+  // Logger for the run_code code-structure gate's allow path (request /
+  // auto-edit verdict allows and the smart fast-allow). Same posture and
+  // greppability convention as the read-only git fast-path it mirrors.
+  const logRunCodeAllow = (detail: string): void => {
+    try {
+      ctx.logger.info(`[dsh-user-approval[run-code-gate]] decision=allow detail=${detail}`)
+    } catch {
+      // Swallow logger failures; the decision has already been computed.
+    }
+  }
+
   // ── Smart-mode evaluator lifecycle ────────────────────────────────────────
   // The classifier is only useful when smart mode is in play, but the
   // evaluator state (compiled patterns, session memory, AbortController)
@@ -492,6 +518,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       smartProvider: cfg.smartProvider ?? null,
       smartModel: cfg.smartModel ?? null,
       readOnlyGitCommands: cfg.readOnlyGitCommands ?? true,
+      runCodePureExpressions: cfg.runCodePureExpressions ?? true,
     }
     const patterns = compileSmartDangerPatterns(smartCfg.smartDangerPatterns, smartCfg.smartExtraDangerPatterns)
     // Cast to our narrower `SmartLlmService` — the host's LlmRuntime.stream
@@ -543,12 +570,17 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       const code = runCodeProgramFromArguments(exec.arguments)
       const preview = code === undefined ? undefined : runCodePreview(code)
       if (mode === 'smart') {
-        // 五步流水线，code 作为 command（危险清单 → 只读 git 快路径 →
-        // 会话记忆 → LLM → 兜底），与 shell 同构；smart 不是硬边界。
+        // 五步流水线，code 作为 command（危险清单 → 代码结构快放 → 只读 git
+        // 快路径 → 会话记忆 → LLM → 兜底），与 shell 同构；危险清单先于快放，
+        // 部署方 pattern 不可被白名单绕过；smart 不是硬边界。
         const verdict = await smartEvaluator(exec, agent.session)
         if (verdict.kind === 'allow') {
           if (verdict.source === 'read-only-git') {
             logReadOnlyGitAllow(verdict.label)
+            return { kind: 'allow' }
+          }
+          if (verdict.source === 'run-code-gate') {
+            logRunCodeAllow(verdict.label)
             return { kind: 'allow' }
           }
           logSmartDecision('allow', `detail=${verdict.source}${modelSuffix(verdict.selection)}`)
@@ -558,9 +590,16 @@ export function apply(ctx: Context, config: VolatileConfig): void {
         return askDecision(exec, mode, familyOf(exec.name), verdict.detail, preview)
       }
       if (mode === 'request' || mode === 'auto-edit') {
-        // 语法白名单：纯 tools.* 调用交给子调用闸门；其余（含解析失败、
-        // 不可读的 code）一律 ask，弹窗带 [code: …] 单行摘要。
-        if (code !== undefined && isToolCallsOnly(code)) return decision
+        // 语法闸门：严格语法（纯 tools.* 程序）放行交给子调用闸门；宽语法
+        // （无调用的纯表达式）由 runCodePureExpressions 开关控制；其余（含
+        // 解析失败、不可读的 code）一律 ask，弹窗带 [code: …] 单行摘要。
+        if (code !== undefined) {
+          const verdict = runCodeGateVerdict(code)
+          if (runCodeGateAllows(verdict, cfg.runCodePureExpressions !== false)) {
+            logRunCodeAllow(verdict)
+            return decision
+          }
+        }
         return askDecision(exec, mode, familyOf(exec.name), undefined, preview)
       }
       // yolo / off：不查，原样放行。
@@ -614,6 +653,12 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       if (verdict.kind === 'allow') {
         if (verdict.source === 'read-only-git') {
           logReadOnlyGitAllow(verdict.label)
+          return { kind: 'allow' }
+        }
+        if (verdict.source === 'run-code-gate') {
+          // 防御分支：shell 族调用不会返回该 source（快放只对 run_code 生效），
+          // 但类型联合要求穷尽；万一上游改动语义，行为与 read-only-git 一致。
+          logRunCodeAllow(verdict.label)
           return { kind: 'allow' }
         }
         logSmartDecision('allow', `detail=${verdict.source}${modelSuffix(verdict.selection)}`)

@@ -57,6 +57,7 @@ const baseConfig: SmartEvaluatorConfig = {
   smartProvider: 'mock-provider',
   smartModel: 'mock-model',
   readOnlyGitCommands: true,
+  runCodePureExpressions: true,
 }
 
 function textStream(text: string): AsyncIterable<unknown> {
@@ -439,4 +440,65 @@ test('evaluator: short-circuit verdicts carry no model selection', async () => {
   const noModelVerdict = await noModel.evaluate({ name: 'bash', arguments: { command: 'ls' } })
   assert.equal(noModelVerdict.kind, 'ask')
   assert.equal(noModelVerdict.selection, undefined)
+})
+
+// ─── run_code code-structure fast-allow ─────────────────────────────────────
+
+test('run_code: a tools-only program fast-allows without the LLM', async () => {
+  const h = makeHarness()
+  const verdict = await h.evaluate({
+    name: 'run_code',
+    arguments: { code: "const r = await tools.read({ file_path: 'a.txt' })\nreturn r.lines.length" },
+  })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(verdict.source, 'run-code-gate')
+  assert.equal(verdict.label, 'tools-only')
+  assert.equal(h.streamCalls, 0, 'a recognized program never reaches the LLM')
+})
+
+test('run_code: a pure program fast-allows per the width switch', async () => {
+  const h = makeHarness()
+  const verdict = await h.evaluate({ name: 'run_code', arguments: { code: 'const x = 1 + 1\nreturn x' } })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(verdict.source, 'run-code-gate')
+  assert.equal(verdict.label, 'pure')
+  assert.equal(h.streamCalls, 0)
+
+  // Switch off: the widened grammar is closed, so the same program falls
+  // through to the LLM classifier instead of fast-allowing.
+  const strict = makeHarness({ configOverrides: { runCodePureExpressions: false } })
+  const strictVerdict = await strict.evaluate({ name: 'run_code', arguments: { code: 'const x = 1 + 1\nreturn x' } })
+  assert.equal(strictVerdict.kind, 'allow')
+  assert.equal(strictVerdict.source, 'classifier')
+  assert.equal(strict.streamCalls, 1)
+})
+
+test('run_code: the danger list runs before the fast-allow', async () => {
+  const h = makeHarness({ configOverrides: { smartExtraDangerPatterns: ['rmSync'] } })
+  // The program is strict tools-only, but its code text contains the
+  // configured pattern: the danger list must win over the grammar.
+  const verdict = await h.evaluate({
+    name: 'run_code',
+    arguments: { code: "await tools.write({ file_path: 'doc.txt', content: 'rmSync is documented here' })" },
+  })
+  assert.equal(verdict.kind, 'ask')
+  assert.match(verdict.detail ?? '', /pattern=rmSync/)
+  assert.equal(h.streamCalls, 0)
+})
+
+test('run_code: an unrecognized program falls through to the classifier, not to ask', async () => {
+  const h = makeHarness()
+  const verdict = await h.evaluate({ name: 'run_code', arguments: { code: "rmSync('./dist')" } })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(verdict.source, 'classifier')
+  assert.equal(h.streamCalls, 1)
+  // The classifier's evidence uses the program text as the command.
+  assert.equal(h.lastEvidence?.toolName, 'run_code')
+  assert.equal(h.lastEvidence?.command, "rmSync('./dist')")
+})
+
+test('run_code: a program without readable code skips the fast-allow', async () => {
+  const h = makeHarness()
+  const verdict = await h.evaluate({ name: 'run_code', arguments: { description: 'no code field' } })
+  assert.notEqual(verdict.source, 'run-code-gate')
 })

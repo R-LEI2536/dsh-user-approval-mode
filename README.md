@@ -27,7 +27,7 @@ See [CHANGELOG.md](./CHANGELOG.md) for release notes.
 - **Read-only git fast-path**: A chain of strictly-parsed read-only links (`git status`, `git log`, `git diff`, …) joined with `&&` `;` `|` or a newline, plus `echo "…"` decoration lines, is exempt from approval in request, auto-edit, and smart, so the agent's highest-frequency shell calls stop prompting. Switch it on the settings page (`readOnlyGitCommands`), or pin it in `cordis.yml`.
 - **Bundled shell-style skill**: The package ships `dsh-approval-shell-style`, a skill the agent can load to write approval-friendly commands (fast-path grammar, expected prompts, post-rejection posture). It appears in the skill catalog of every session while the plugin is mounted and disappears with the plugin.
 - **Tool Family Classification**: Automatically categorizes tools into edit, shell, readonly, and other families
-- **PTC preset compatibility**: Under the `ptc` agent preset the model can call only `run_code`; the plugin classifies the top-level call by the program's code structure (pure `tools.*` programs pass to the sub-call gate, any other JS prompts under request/auto-edit, smart sends the code to the classifier), while every `tools.*` sub-call still passes the gate under its real tool name, with command/path/code summaries appended to the approval prompts
+- **PTC preset compatibility**: Under the `ptc` agent preset the model can call only `run_code`; the plugin classifies the top-level call by the program's code structure (pure `tools.*` programs and call-free pure computation pass to the sub-call gate, any other JS prompts under request/auto-edit, smart fast-allows recognized programs before the classifier and sends the rest), while every `tools.*` sub-call still passes the gate under its real tool name, with command/path/code summaries appended to the approval prompts
 - **Sandbox Integration**: Automatically adjusts sandbox policy when switching modes
 - **Session-Scoped**: Each session maintains its own approval mode
 - **In-Memory State**: Per-session mode stored in memory, resets to default on DSH restart
@@ -47,7 +47,7 @@ The approval modes are inspired by [Qwen Code](https://github.com/QwenLM/Qwen-Co
 
 ¹ Except a strictly-parsed read-only command chain (a `git status` / `git log` / `git diff` link, an `echo "…"` line, or those joined with `&&` `;` `|`), which is allowed without prompting in these three modes — see [Read-only git commands](#read-only-git-commands).
 
-**The same table holds under the `ptc` agent preset.** That preset lets the model call only `run_code`; every other native tool is reachable only as a `tools.*` binding inside the program. The `run_code` call itself is classified first: a program of pure `tools.*` calls is allowed through to the sub-call gate, any other JS prompts under request/auto-edit (smart sends the program text to the classifier; yolo/off skip the check); each sub-call is then classified by this table — a `write` sub-call asks under request, a `bash` sub-call goes through the five-step pipeline under smart, and so on. Details and limits: "PTC preset" under Known Limitations.
+**The same table holds under the `ptc` agent preset.** That preset lets the model call only `run_code`; every other native tool is reachable only as a `tools.*` binding inside the program. The `run_code` call itself is classified first: a program of pure `tools.*` calls is allowed through to the sub-call gate, call-free pure computation passes too (per the `runCodePureExpressions` switch), any other JS prompts under request/auto-edit (smart fast-allows recognized programs before the classifier and sends the rest through it; yolo/off skip the check); each sub-call is then classified by this table — a `write` sub-call asks under request, a `bash` sub-call goes through the five-step pipeline under smart, and so on. Details and limits: "PTC preset" under Known Limitations.
 
 ### Mode Details
 
@@ -476,14 +476,26 @@ the plugin does, and where its reach ends:
 
 - **The top-level call is classified by its code.** `run_code` ships in
   `autoAllowTools`, but before that allow takes effect the gate inspects the
-  program: a program whose every statement is a `tools.*` call (plus the
-  variables and `return` that receive results) is allowed through — the real
-  actions are its sub-calls, each one carrying `parent` and its real tool name
-  back into the same `tools/pre-execute` gate. Any other JS (arithmetic,
-  branching, imports, dynamic member access, or syntax the whitelist does not
-  recognize) prompts under request and auto-edit. Smart mode sends the program
-  text through the five-step classifier pipeline instead; yolo and off inspect
-  nothing.
+  program. Two grammar widths, mirroring the read-only git fast-path's
+  recognize-don't-guess posture:
+  - **Strict** (always passes): every statement is a `tools.*` call, a
+    variable receiving one, or a `return` of trusted values — the real
+    actions are its sub-calls, each one carrying `parent` and its real tool
+    name back into the same `tools/pre-execute` gate.
+  - **Widened** (default, one settings switch to close): statements may
+    additionally be call-free pure computation — arithmetic, comparisons,
+    template assembly, literal-index reads over the program's own data. Such
+    code cannot read files, reach the network, or call anything.
+    Imports, branching, dynamic member access, any call that is not
+    `tools.*`, and unrecognized syntax still prompt under request and
+    auto-edit (`runCodePureExpressions` restores the strict width).
+  In smart mode the same verdict is a fast-allow inside the five-step
+  pipeline, ordered after the danger list (a configured pattern always
+  wins) and before the LLM — recognized programs never reach the classifier
+  and their source never leaves the machine; everything else rides the
+  pipeline unchanged. Yolo and off inspect nothing. Every gate allow logs
+  one greppable line,
+  `[dsh-user-approval[run-code-gate]] decision=allow detail=<verdict>`.
 - **The top-level prompt carries the code.** The host approval panel renders no
   command block for `run_code`, so a top-level ask appends a one-line
   `[code: …]` summary (whitespace-collapsed, capped at 200 characters) after
@@ -579,15 +591,16 @@ whitespace.
 ## Settings Page
 
 Open the Web UI sidebar → **Settings** → **Approval Modes** (last item, after
-Plugins) to edit the nine user-facing Config fields. The page header has a
+Plugins) to edit the ten user-facing Config fields. The page header has a
 short title and an intro paragraph; the page body is divided into three
 sub-sections:
 
 1. **Tool family classification** — one comma-separated text input per
    family (`editTools`, `shellTools`, `readOnlyTools`, `autoAllowTools`),
-   plus a switch for the read-only git fast-path (`readOnlyGitCommands`).
-   The values are treated as sets: order is irrelevant, duplicates are
-   folded on commit.
+   plus a switch for the read-only git fast-path (`readOnlyGitCommands`)
+   and one for the `run_code` pure-expression width
+   (`runCodePureExpressions`, see the PTC preset section). The values are
+   treated as sets: order is irrelevant, duplicates are folded on commit.
 2. **Sandbox policy** — one dropdown per mode (`request`, `auto-edit`,
    `yolo`). Dropdown labels display in English in both `en` and `zh`
    locales (the values are technical identifiers shared with the schema).
@@ -637,6 +650,7 @@ override (so the deployer's base re-emerges).
 | `readOnlyTools` | comma-separated text (set) | Always allowed (any mode) |
 | `autoAllowTools` | comma-separated text (set) | Bypass approval regardless of family (ships with `run_code`; see PTC preset) |
 | `readOnlyGitCommands` | switch | Allow a strictly-parsed read-only command — or a chain of them, plus `echo "…"` lines — without prompting (default on) |
+| `runCodePureExpressions` | switch | Allow call-free pure expressions in a top-level `run_code` program (arithmetic, comparisons, template assembly, literal-index reads) without prompting; also a fast-allow before the smart classifier. Turn it off to restore the strict grammar (default on) |
 | `sandboxDefaults` | per-mode dropdown | Sandbox policy when switching into each mode |
 | `askReason` | textarea | Approval dialog template (placeholders: `{tool}` / `{mode}` / `{family}`) |
 | `smartProvider` | text | LLM provider route for the smart classifier (leave empty to inherit host default) |
@@ -655,7 +669,7 @@ Deployer-only (not shown in the page; set in `cordis.yml`):
 
 ### Effect timing
 
-The nine user-editable fields are **live** — they take effect on the next
+The ten user-editable fields are **live** — they take effect on the next
 `tools/pre-execute` invocation, no DSH restart required. The runtime gate
 re-reads the live volatile Config on every tool call.
 
@@ -745,6 +759,7 @@ You can customize the plugin behavior in your agent preset:
 | `autoAllowTools` | string[] | `['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', + 17 `mnemon_*` names]` | Tools that always bypass approval. `run_code` ships here because it is the PTC preset's transport: the top-level call is classified by the program's code structure first (pure `tools.*` programs pass to the sub-call gate, other JS prompts), and the sub-calls still pass the gate. Remove it to gate the transport itself (one blind prompt per program, no code inspection). All 17 `mnemon_*` tools (dsh-mnemon) also ship here — compatible with dsh-mnemon out of the box; delete the mnemon_* names to gate them |
 | `unclassified` | string | `ask` | Strategy for unclassified tools: `ask` (require approval) or `allow` (auto-approve) |
 | `readOnlyGitCommands` | boolean | `true` | Allow a strictly-parsed read-only command chain instead of prompting (see [Read-only git commands](#read-only-git-commands)). Also a switch on the settings page; user overrides layer over this base |
+| `runCodePureExpressions` | boolean | `true` | Allow call-free pure expressions in a top-level `run_code` program without prompting (see the PTC preset section; also a fast-allow before the smart classifier). Also a switch on the settings page; user overrides layer over this base |
 | `sandboxDefaults` | object | `{request: 'workspace-write', auto-edit: 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write'}` | Sandbox mode for each approval mode |
 | `askReason` | string | `[{family}] Tool: {tool} \| Mode: {mode}` | Message template for approval requests. Supports `{tool}`, `{mode}`, `{family}` placeholders. The default ships bilingual (zh UIs show a built-in zh variant; logs keep English); a custom template displays verbatim |
 | `smartProvider` | string \| null | `null` | LLM provider for the smart-mode classifier (null = inherit `agentDefaultModel`) |
@@ -854,14 +869,15 @@ what to do after a rejection.
   a plugin that still loads but logs a warning and contributes no skill: the
   same class of install-path defect as a missing `cordis.patch.yml`.
 - **PTC contract** — the skill also states the PTC-preset rules: a top-level
-  `run_code` program passes only when it is pure `tools.*` calls (other JS asks),
+  `run_code` program passes when it is pure `tools.*` calls or call-free pure
+  computation (other JS asks; a settings switch can close the widened width),
   every `tools.*` binding call passes the gate, and a rejected binding raises
   `ToolCallError` without a licence to route around it.
 
 ## How It Works
 
 1. **Tool Execution Interception**: The plugin listens to `tools/pre-execute` events
-2. **PTC code inspection**: A top-level `run_code` is classified by its program's code first — pure `tools.*` programs pass to the sub-call gate, any other JS asks under request/auto-edit (with a `[code: …]` summary), smart sends the code to the classifier; the program's sub-calls return to step 1 under their real tool names
+2. **PTC code inspection**: A top-level `run_code` is classified by its program's code first — pure `tools.*` programs and (per the `runCodePureExpressions` switch) call-free pure computation pass to the sub-call gate, any other JS asks under request/auto-edit (with a `[code: …]` summary); in smart the same verdict fast-allows after the danger list, before the classifier; the program's sub-calls return to step 1 under their real tool names
 3. **Family Classification**: Determines which family the tool belongs to
 4. **Read-Only Fast-Path**: A shell call whose every link is a strictly-parsed read-only command is allowed without approval
 5. **Mode Check**: Evaluates current approval mode

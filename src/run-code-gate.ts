@@ -3,17 +3,26 @@
  * structure, not by its identity.
  *
  * `run_code` stays in `autoAllowTools` (the transport contract, ADR 0004),
- * but the top-level call is no longer allowed blindly. A program whose
- * every statement is a `tools.*` call (plus the variables and `return`
- * that receive its results) is allowed through — the sub-calls re-enter
- * this same gate under their real names. Anything else — arithmetic,
- * branching, imports, dynamic member access, or syntax the whitelist
- * does not recognize — asks the user, because a top-level dialog cannot
- * show the program and a silent `fs.rmSync` is exactly the hole this
- * closes (design page: docs/2026-11-07-run-code-approval-flow.html).
+ * but the top-level call is no longer allowed blindly. The gate recognizes
+ * statements in two grammars, mirroring the read-only git fast-path posture
+ * (ADR 0003): a strict one and a widened one.
  *
- * The whitelist is deliberately strict: it recognizes rather than guesses.
- * An unrecognized construct fails closed to ask.
+ * - Strict: every statement is a `tools.*` call, a variable receiving one,
+ *   or a `return` of trusted values. Allowed in every gated mode.
+ * - Widened (pure expressions, on by default via `runCodePureExpressions`):
+ *   statements may additionally be call-free pure computation — arithmetic,
+ *   comparisons, template assembly, literal-index reads — over literals,
+ *   received results, and previously computed values. Such a program cannot
+ *   touch anything outside its own memory: imports, direct calls, and
+ *   dynamic member access stay out of both grammars.
+ *
+ * Anything the grammar does not recognize — branching, loops, functions,
+ * imports, ANY call that is not `tools.*`, dynamic member access, or
+ * unparseable source — asks under request/auto-edit and falls through to
+ * the smart pipeline's later steps under smart. The whitelist recognizes,
+ * it does not guess; failure is closed.
+ *
+ * Design page: docs/2026-11-07-run-code-approval-flow.html.
  */
 
 import { parse } from 'acorn'
@@ -50,9 +59,9 @@ export function runCodePreview(code: string): string {
     : `${oneLine.slice(0, RUN_CODE_PREVIEW_MAX_CHARS)}…`
 }
 
-// ─── AST whitelist ───────────────────────────────────────────────────────────
+// ─── AST helpers ─────────────────────────────────────────────────────────────
 
-/** Structural view of an acorn node; the whitelist only ever reads `type`
+/** Structural view of an acorn node; the grammar only ever reads `type`
  * and a handful of well-known fields. */
 interface AcornNode {
   readonly type: string
@@ -86,12 +95,14 @@ function isPlainIdentifier(node: AcornNode): node is AcornNode & { name: string 
   return node.type === 'Identifier' && typeof node.name === 'string'
 }
 
+// ─── Trusted values (the strict grammar's expression class) ─────────────────
+
 /**
- * A value expression the whitelist trusts: literals, identifiers, object /
- * array literals of trusted values, and non-computed member chains rooted
- * at an identifier. This is what tool-call arguments and a `return` may be
- * built from. Anything else — arithmetic, concatenation, template
- * expressions, calls, computed (dynamic) member access — asks.
+ * A trusted value: literals, identifiers (minus the ambient `process` /
+ * `globalThis`), object / array literals of trusted values, and
+ * non-computed member chains rooted at an identifier. This is what a
+ * strict-grammar `tools.*` call's arguments and a strict `return` may be
+ * built from.
  */
 function isTrustedValue(node: AcornNode): boolean {
   switch (node.type) {
@@ -127,70 +138,211 @@ function isTrustedValue(node: AcornNode): boolean {
   }
 }
 
+// ─── Pure expressions (the widened grammar's expression class) ───────────────
+
 /**
- * A `tools.*` call, optionally awaited: `(await )? tools.<name>(args…)`.
- * The callee must be a plain, non-computed member of the `tools` binding
- * and every argument must be a trusted value.
+ * A pure expression: a superset of trusted values adding call-free
+ * computation — binary / logical / unary (minus `delete`) operators,
+ * conditional expressions, non-tagged template literals, spreads, and
+ * member reads with a LITERAL index. Every data source is a literal, a
+ * received result, or a previously computed value; there is no call to
+ * hide an effect in. Anything else — calls, `new`, tagged templates,
+ * dynamic imports, updates, assignments, function/class expressions,
+ * `await` — is outside the grammar.
  */
-function isToolsCall(node: AcornNode): boolean {
+function isPureExpression(node: AcornNode): boolean {
+  switch (node.type) {
+    case 'BinaryExpression':
+    case 'LogicalExpression':
+      return isPureExpression(node.left as AcornNode) && isPureExpression(node.right as AcornNode)
+    case 'UnaryExpression':
+      return node.operator !== 'delete' && isPureExpression(node.argument as AcornNode)
+    case 'ConditionalExpression':
+      return isPureExpression(node.test as AcornNode)
+        && isPureExpression(node.consequent as AcornNode)
+        && isPureExpression(node.alternate as AcornNode)
+    case 'TemplateLiteral': {
+      const expressions = node.expressions
+      return Array.isArray(expressions)
+        && expressions.every((expression) => isPureExpression(expression as AcornNode))
+    }
+    case 'MemberExpression': {
+      const property = node.property as AcornNode | undefined
+      if (node.computed === true) {
+        // Literal-index reads only; a dynamic key (`r.body[i]`, `obj[k()]`)
+        // stays outside the widened grammar.
+        return property !== undefined && property.type === 'Literal' && isPureExpression(node.object as AcornNode)
+      }
+      return isPureExpression(node.object as AcornNode) && isPlainIdentifier(property as AcornNode)
+    }
+    case 'ObjectExpression': {
+      const properties = node.properties
+      if (!Array.isArray(properties)) return false
+      return properties.every((property) => {
+        if (typeof property !== 'object' || property === null) return false
+        const typed = property as AcornNode
+        if (typed.type === 'SpreadElement') return isPureExpression(typed.argument as AcornNode)
+        if (typed.type !== 'Property' || typed.computed === true) return false
+        const key = typed.key as AcornNode | undefined
+        if (key === undefined || (key.type !== 'Identifier' && key.type !== 'Literal')) return false
+        return isPureExpression(typed.value as AcornNode)
+      })
+    }
+    case 'ArrayExpression': {
+      const elements = node.elements
+      if (!Array.isArray(elements)) return false
+      return elements.every((element) => {
+        if (element === null) return true
+        const typed = element as AcornNode
+        if (typed.type === 'SpreadElement') return isPureExpression(typed.argument as AcornNode)
+        return isPureExpression(typed)
+      })
+    }
+    default:
+      // Literals and identifiers are shared with the strict class.
+      return isTrustedValue(node)
+  }
+}
+
+// ─── Tools-call shape ────────────────────────────────────────────────────────
+
+/**
+ * Classify the call shape of a `tools.*` invocation (optionally awaited).
+ * @returns `'tool'` when every argument is a trusted value (strict
+ * grammar), `'tool-pure'` when every argument is a pure expression but at
+ * least one exceeds the strict class (so the statement only passes under
+ * the widened grammar), and `undefined` when the node is not a plain,
+ * non-computed `tools.<name>(…)` call.
+ */
+function toolsCallClass(node: AcornNode): 'tool' | 'tool-pure' | undefined {
   const call = node.type === 'AwaitExpression'
     ? node.argument as AcornNode | undefined
     : node
-  if (call === undefined || call.type !== 'CallExpression') return false
+  if (call === undefined || call.type !== 'CallExpression') return undefined
   const callee = call.callee as AcornNode | undefined
-  if (callee === undefined || callee.type !== 'MemberExpression' || callee.computed === true) return false
+  if (callee === undefined || callee.type !== 'MemberExpression' || callee.computed === true) return undefined
   const object = callee.object as AcornNode | undefined
-  if (object === undefined || !isPlainIdentifier(object) || object.name !== 'tools') return false
+  if (object === undefined || !isPlainIdentifier(object) || object.name !== 'tools') return undefined
   const property = callee.property as AcornNode | undefined
-  if (property === undefined || !isPlainIdentifier(property)) return false
+  if (property === undefined || !isPlainIdentifier(property)) return undefined
   const args = call.arguments
-  return Array.isArray(args) && args.every((argument) => isTrustedValue(argument as AcornNode))
+  if (!Array.isArray(args)) return undefined
+  if (args.every((argument) => isTrustedValue(argument as AcornNode))) return 'tool'
+  if (args.every((argument) => isPureExpression(argument as AcornNode))) return 'tool-pure'
+  return undefined
 }
 
-/** One top-level statement the whitelist allows. Everything else asks. */
-function isAllowedStatement(statement: AcornNode): boolean {
+// ─── Statement classification ─────────────────────────────────────────────────
+
+/**
+ * One top-level statement's contribution to the verdict:
+ * - `'tool'` — a strict-grammar `tools.*` form;
+ * - `'tool-pure'` — a `tools.*` call whose arguments use the widened
+ *   expression class;
+ * - `'pure'` — a call-free pure statement (widened grammar only);
+ * - `'strict'` — a `return` of trusted values (or a bare `return`),
+ *   allowed by the strict grammar without widening;
+ * - `'bad'` — anything unrecognized: the program asks.
+ */
+type StatementClass = 'tool' | 'tool-pure' | 'pure' | 'strict' | 'bad'
+
+function classifyStatement(statement: AcornNode): StatementClass {
   switch (statement.type) {
-    case 'ExpressionStatement':
-      return isToolsCall(statement.expression as AcornNode)
+    case 'ExpressionStatement': {
+      const expression = statement.expression as AcornNode | undefined
+      if (expression === undefined) return 'bad'
+      const call = toolsCallClass(expression)
+      if (call !== undefined) return call
+      return isPureExpression(expression) ? 'pure' : 'bad'
+    }
     case 'VariableDeclaration': {
-      // Only "receive a tool-call result" declarations: every declarator
-      // binds a plain identifier to a `tools.*` call.
+      // Only "receive a tool-call result" or "compute a pure value"
+      // declarations: every declarator binds a plain identifier (no
+      // destructuring) to a recognized initializer.
       const declarations = statement.declarations
-      if (!Array.isArray(declarations) || declarations.length === 0) return false
-      return declarations.every((declarator) => {
-        if (typeof declarator !== 'object' || declarator === null) return false
+      if (!Array.isArray(declarations) || declarations.length === 0) return 'bad'
+      let sawTool = false
+      let sawPure = false
+      let sawBad = false
+      for (const declarator of declarations) {
+        if (typeof declarator !== 'object' || declarator === null) return 'bad'
         const typed = declarator as AcornNode
-        if (typed.type !== 'VariableDeclarator') return false
-        if (!isPlainIdentifier(typed.id as AcornNode)) return false
+        if (typed.type !== 'VariableDeclarator') return 'bad'
+        if (!isPlainIdentifier(typed.id as AcornNode)) return 'bad'
         const init = typed.init as AcornNode | null | undefined
-        return init !== null && init !== undefined && isToolsCall(init)
-      })
+        if (init === null || init === undefined) return 'bad'
+        const call = toolsCallClass(init)
+        if (call === 'tool') sawTool = true
+        else if (call === 'tool-pure') { sawTool = true; sawPure = true }
+        else if (isPureExpression(init)) sawPure = true
+        else sawBad = true
+      }
+      if (sawBad) return 'bad'
+      if (sawTool) return sawPure ? 'tool-pure' : 'tool'
+      return 'pure'
     }
     case 'ReturnStatement': {
       const argument = statement.argument as AcornNode | null | undefined
-      return argument === null || argument === undefined || isTrustedValue(argument)
+      if (argument === null || argument === undefined) return 'strict'
+      if (isTrustedValue(argument)) return 'strict'
+      return isPureExpression(argument) ? 'pure' : 'bad'
     }
     default:
       // if / for / while / function / class / import / export / block /
       // try / throw / switch / assignment … all ask.
-      return false
+      return 'bad'
   }
 }
 
+// ─── Verdict ──────────────────────────────────────────────────────────────────
+
+/** What the code-structure gate concluded about one top-level program. */
+export type RunCodeGateVerdict =
+  /** Every statement is a strict-grammar form. Allowed in every gated mode. */
+  | 'tools-only'
+  /** Recognized, but at least one statement (or call argument) uses the
+   *  widened pure-expression class. Allowed when `runCodePureExpressions`
+   *  is on; asks otherwise. */
+  | 'tools-and-pure'
+  /** Recognized, call-free pure computation, no `tools.*` call at all. */
+  | 'pure'
+  /** Something outside both grammars (or unparseable source): ask. */
+  | 'ask'
+
 /**
- * Decide whether a `run_code` program is "tool calls only".
+ * Classify a `run_code` program by its code structure.
  *
- * True means the program has no effect the plugin cannot see: every
- * statement is a `tools.*` call (each re-enters the gate as a sub-call),
- * a variable receiving one, or a `return` of trusted values. False means
- * ask — including unparseable code.
- *
- * This is a syntactic whitelist, NOT a security boundary: it exists to
- * keep the strict modes quiet for honest orchestrating programs. The hard
+ * This is a syntactic recognizer, NOT a security boundary: it exists to
+ * keep the gated modes quiet for honest programs (tool orchestration and
+ * pure computation) while everything unrecognizable fails closed to a
+ * prompt (request/auto-edit) or the smart pipeline's later steps. The hard
  * boundary under PTC remains the sandbox (ADR 0004).
  */
-export function isToolCallsOnly(code: string): boolean {
+export function runCodeGateVerdict(code: string): RunCodeGateVerdict {
   const body = parseProgramBody(code)
-  if (body === undefined) return false
-  return body.every(isAllowedStatement)
+  if (body === undefined) return 'ask'
+  let sawTool = false
+  let sawPure = false
+  for (const statement of body) {
+    const statementClass = classifyStatement(statement)
+    if (statementClass === 'bad') return 'ask'
+    // 'strict' (a return of trusted values) never widens the grammar: it
+    // exists in the strict class precisely to hand back tool results, so it
+    // contributes no flag of its own.
+    if (statementClass === 'tool' || statementClass === 'tool-pure') sawTool = true
+    if (statementClass === 'tool-pure' || statementClass === 'pure') sawPure = true
+  }
+  if (sawPure) return sawTool ? 'tools-and-pure' : 'pure'
+  return 'tools-only'
+}
+
+/**
+ * Whether a verdict is an allow under the configured grammar width.
+ * @param verdict - the classification of the program.
+ * @param pureExpressions - the `runCodePureExpressions` switch: `true`
+ * (default) admits the widened pure-expression class.
+ */
+export function runCodeGateAllows(verdict: RunCodeGateVerdict, pureExpressions: boolean): boolean {
+  if (verdict === 'tools-only') return true
+  return pureExpressions && (verdict === 'tools-and-pure' || verdict === 'pure')
 }

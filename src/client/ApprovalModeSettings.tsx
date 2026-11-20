@@ -50,6 +50,7 @@ const FALLBACK: Required<Config> = {
   autoAllowTools: ['ask_user_question', 'exit_plan_mode', 'job_output', 'skill', 'subagent', 'subagent_fork', 'present', 'wait_agent', 'send_message', 'job_kill', 'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'run_code', 'mnemon_document_create', 'mnemon_document_manage', 'mnemon_document_search', 'mnemon_forget', 'mnemon_link', 'mnemon_memory_bodies', 'mnemon_memory_body_create', 'mnemon_memory_body_merge', 'mnemon_memory_body_update', 'mnemon_recall', 'mnemon_related', 'mnemon_remember', 'mnemon_runtime_memory', 'mnemon_status', 'mnemon_subagent_result', 'mnemon_view_action', 'mnemon_view_route'],
   unclassified: 'ask',
   readOnlyGitCommands: true,
+  runCodePureExpressions: true,
   sandboxDefaults: { request: 'workspace-write', 'auto-edit': 'workspace-write', smart: 'workspace-write', yolo: 'workspace-write' },
   askReason: '[{family}] Tool: {tool} | Mode: {mode}',
   smartProvider: null,
@@ -73,6 +74,7 @@ function readValue(snapshotValue: Config | undefined): Required<Config> {
     autoAllowTools: c.autoAllowTools ?? FALLBACK.autoAllowTools,
     unclassified: c.unclassified ?? FALLBACK.unclassified,
     readOnlyGitCommands: c.readOnlyGitCommands ?? FALLBACK.readOnlyGitCommands,
+    runCodePureExpressions: c.runCodePureExpressions ?? FALLBACK.runCodePureExpressions,
     sandboxDefaults: c.sandboxDefaults ?? FALLBACK.sandboxDefaults,
     askReason: c.askReason ?? FALLBACK.askReason,
     smartProvider: c.smartProvider ?? FALLBACK.smartProvider,
@@ -364,6 +366,21 @@ export function ApprovalModeSettings({ form, t }: ApprovalModeSettingsProps) {
               disabled={busy.has('readOnlyGitCommands')}
               label={t('field.readOnlyGitCommands')}
               onChange={(next) => { void commitField('readOnlyGitCommands', next) }}
+            />
+          </FieldShell>
+
+          <FieldShell
+            label={t('field.runCodePureExpressions')}
+            descKey="desc.runCodePureExpressions"
+            t={t}
+            onReset={() => { reset('runCodePureExpressions') }}
+            resetLabel={t('reset.label')}
+          >
+            <Switch
+              checked={value.runCodePureExpressions}
+              disabled={busy.has('runCodePureExpressions')}
+              label={t('field.runCodePureExpressions')}
+              onChange={(next) => { void commitField('runCodePureExpressions', next) }}
             />
           </FieldShell>
         </div>

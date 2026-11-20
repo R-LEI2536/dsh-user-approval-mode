@@ -21,6 +21,10 @@ export interface SmartEvaluatorConfig {
      *  checked after the danger list and before the LLM classifier, so a
      *  configured danger pattern always wins (see `read-only-git.ts`). */
     readonly readOnlyGitCommands: boolean;
+    /** Width switch for the run_code code-structure fast-allow: `true`
+     *  (default) also admits call-free pure expressions, `false` keeps the
+     *  strict grammar. The tools-only verdict fast-allows either way. */
+    readonly runCodePureExpressions: boolean;
 }
 /** The minimum surface we read off `ctx.llm.stream(options)`. Marked
  *  structural so we don't have to import the full dsh-llm types here —
@@ -68,6 +72,10 @@ export type SmartShellDecision = {
 } | {
     readonly kind: 'allow';
     readonly source: 'read-only-git';
+    readonly label: string;
+} | {
+    readonly kind: 'allow';
+    readonly source: 'run-code-gate';
     readonly label: string;
 } | {
     readonly kind: 'ask';
