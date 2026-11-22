@@ -47,6 +47,8 @@ interface Harness {
   streamCalls: number
   lastSelection: SelectionStub | undefined
   lastEvidence: { toolName?: string; command?: string | null; toolArguments?: string | null } | undefined
+  /** Every `[dsh-user-approval[run-code-strip]]` line the evaluator emitted. */
+  stripLog: readonly string[]
 }
 
 const baseConfig: SmartEvaluatorConfig = {
@@ -91,6 +93,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
   const streamCalls = { value: 0 }
   const lastSelectionRef: { value: SelectionStub | undefined } = { value: undefined }
   const lastEvidenceRef: { value: Harness['lastEvidence'] } = { value: undefined }
+  const stripLog: string[] = []
   const factory = options.streamFactory ?? (() => textStream('{"verdict":"approve"}'))
 
   const llm: SmartLlmService | undefined = options.llmAvailable === false
@@ -128,6 +131,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     defaultModel: options.defaultModel,
     memory,
     lifetimeSignal,
+    log: (message) => { stripLog.push(message) },
   })
 
   const sessionStub = options.sessionEvents !== undefined
@@ -150,6 +154,7 @@ function makeHarness(options: HarnessOptions = {}): Harness {
     get streamCalls() { return streamCalls.value },
     get lastSelection() { return lastSelectionRef.value },
     get lastEvidence() { return lastEvidenceRef.value },
+    get stripLog() { return stripLog },
   }
 }
 
@@ -525,4 +530,66 @@ test('run_code: a program without readable code skips the fast-allow', async () 
   const h = makeHarness()
   const verdict = await h.evaluate({ name: 'run_code', arguments: { description: 'no code field' } })
   assert.notEqual(verdict.source, 'run-code-gate')
+})
+
+// ─── run_code evidence split (run-code-strip.ts) ─────────────────────────────
+
+test('run_code: the classifier sees the split program, not the raw sub-calls', async () => {
+  const h = makeHarness()
+  const verdict = await h.evaluate({
+    name: 'run_code',
+    arguments: { code: "const r = await tools.read({ path: 'a.txt' })\nrmSync('./dist')" },
+  })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(verdict.source, 'classifier')
+  assert.equal(h.streamCalls, 1)
+  assert.equal(h.lastEvidence?.command, "const r = [gated sub-call]\nrmSync('./dist')")
+  // Dedup: the raw program must not ride back in through toolArguments —
+  // that would smuggle the sub-calls right back to the classifier.
+  assert.equal(h.lastEvidence?.toolArguments, null)
+  assert.ok(h.stripLog.some((line) => line.includes('run-code-strip') && line.includes('decision=strip count=1')),
+    'the strip decision must be greppable')
+})
+
+test('run_code: an aborting program reaches the classifier raw and logs why', async () => {
+  const h = makeHarness()
+  const program = 'const tools = {}\ntools.bash({ command: "ls" })'
+  const verdict = await h.evaluate({ name: 'run_code', arguments: { code: program } })
+  assert.equal(verdict.kind, 'allow')
+  assert.equal(verdict.source, 'classifier')
+  assert.equal(h.lastEvidence?.command, program)
+  assert.equal(h.lastEvidence?.toolArguments, null)
+  assert.ok(h.stripLog.some((line) => line.includes('run-code-strip') && line.includes('reason=shadow')),
+    'the abort must be greppable')
+})
+
+test('run_code: the danger list still scans the RAW program (the split cannot bypass it)', async () => {
+  const h = makeHarness({ configOverrides: { smartExtraDangerPatterns: ['\\bNOPE\\b'] } })
+  const verdict = await h.evaluate({
+    name: 'run_code',
+    arguments: { code: 'await tools.bash({ command: "NOPE here" })' },
+  })
+  assert.equal(verdict.kind, 'ask')
+  assert.match(verdict.detail ?? '', /pattern=/)
+  assert.equal(h.streamCalls, 0)
+})
+
+test('run_code: session memory still keys the RAW program across the split', async () => {
+  const memory = createSmartSessionMemory(60_000)
+  const args = { code: "const r = await tools.read({ path: 'a.txt' })\nrmSync('./dist')" }
+  const first = makeHarness({ memory })
+  const firstVerdict = await first.evaluate({ name: 'run_code', arguments: args })
+  assert.equal(firstVerdict.source, 'classifier')
+  const cached = makeHarness({ memory })
+  const cachedVerdict = await cached.evaluate({ name: 'run_code', arguments: args })
+  assert.equal(cachedVerdict.kind, 'allow')
+  assert.equal(cachedVerdict.source, 'remembered')
+  assert.equal(cached.streamCalls, 0, 'the second evaluation must not reach the LLM')
+})
+
+test('run_code: bash evidence is unaffected by the split (no dedup, no strip)', async () => {
+  const h = makeHarness()
+  await h.evaluate({ name: 'bash', arguments: { command: 'npm test' } })
+  assert.equal(h.lastEvidence?.toolArguments, '{"command":"npm test"}')
+  assert.equal(h.stripLog.length, 0, 'the splitter only runs for run_code')
 })

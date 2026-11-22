@@ -73,15 +73,17 @@ export function runCodePreview(code: string): string {
 // ─── AST helpers ─────────────────────────────────────────────────────────────
 
 /** Structural view of an acorn node; the grammar only ever reads `type`
- * and a handful of well-known fields. */
-interface AcornNode {
+ * and a handful of well-known fields. Exported so `run-code-strip.ts`
+ * shares the same structural view. */
+export interface AcornNode {
   readonly type: string
   readonly [field: string]: unknown
 }
 
 /** Parse options mirror how the PTC runtime executes a program: a module-ish
- * body with top-level `await` and a final `return`. */
-function parseProgramBody(code: string): readonly AcornNode[] | undefined {
+ * body with top-level `await` and a final `return`. Exported for
+ * `run-code-strip.ts`, which parses programs with the same goal. */
+export function parseProgramBody(code: string): readonly AcornNode[] | undefined {
   try {
     const program = parse(code, {
       ecmaVersion: 'latest',
@@ -105,10 +107,10 @@ const ASK_ONLY_IDENTIFIERS = new Set(['process', 'globalThis'])
 /** The sub-call binding. A program that binds this name anywhere — a
  * variable declaration, a `for` binding, a catch parameter, a callback
  * parameter — turns would-be gated `tools.*` calls into unguarded plain
- * calls, so the whole program asks. */
-const SUB_CALL_BINDING = 'tools'
+ * calls, so the whole program asks. Exported for `run-code-strip.ts`. */
+export const SUB_CALL_BINDING = 'tools'
 
-function isPlainIdentifier(node: AcornNode): node is AcornNode & { name: string } {
+export function isPlainIdentifier(node: AcornNode): node is AcornNode & { name: string } {
   return node.type === 'Identifier' && typeof node.name === 'string'
 }
 
@@ -589,9 +591,9 @@ function classifyStatement(ctx: GateContext, statement: AcornNode): StatementCla
  * loop and `for`-init bindings), catch parameters, and function / arrow
  * parameters. Used for two rules: local assignment is allowed only for
  * declared names, and a program that shadows the `tools` binding anywhere
- * asks as a whole.
+ * asks as a whole. Exported for `run-code-strip.ts`'s shadow check.
  */
-function collectDeclaredNames(node: AcornNode, into: Set<string>): void {
+export function collectDeclaredNames(node: AcornNode, into: Set<string>): void {
   switch (node.type) {
     case 'VariableDeclarator': {
       const id = node.id as AcornNode | undefined

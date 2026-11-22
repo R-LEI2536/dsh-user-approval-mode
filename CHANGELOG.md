@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changed
+
+- **Smart mode: a top-level `run_code` program reaches the LLM classifier
+  split.** Under the `ptc` preset, a program that falls through the
+  code-structure gate has its gated `tools.*` sub-calls replaced by
+  `[gated sub-call]` markers before the classifier sees it
+  (`src/run-code-strip.ts`): every sub-call already faces its own gate at
+  execution time under its real tool name with its real argument values, so
+  the classifier reviews the program's direct code — imports, direct calls,
+  data assembly — instead of re-judging calls that have their own reviewer.
+  The split is conservative and fails safe: a program that binds the name
+  `tools`, references `eval` / `Function`, uses a dynamic `import()`,
+  writes any member (including `globalThis`), or calls the object-reflection
+  hijack surfaces (`Object.assign`, `Object.defineProperty`, `Reflect.set`,
+  …) is handed to the classifier raw. The classifier evidence also stops
+  re-sending the whole program through `toolArguments` (the program already
+  is the `command`); the danger-list match text, the session-memory key, and
+  the user-facing `[code: …]` summary keep the original source. Every strip
+  or abort decision logs one greppable line:
+  `[dsh-user-approval[run-code-strip]] decision=strip count=N` or
+  `decision=abort reason=<why>`.
+
 ## [0.15.0] - 2026-11-20
 
 ### Added

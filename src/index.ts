@@ -497,6 +497,17 @@ export function apply(ctx: Context, config: VolatileConfig): void {
     }
   }
 
+  // Logger for the run_code evidence splitter (smart mode, LLM evidence
+  // only): one greppable line per strip / abort decision, same posture
+  // and convention as the fast-path loggers it mirrors.
+  const logRunCodeStrip = (message: string): void => {
+    try {
+      ctx.logger.info(message)
+    } catch {
+      // Swallow logger failures; the split has already happened.
+    }
+  }
+
   // Logger for the run_code code-structure gate's allow path (request /
   // auto-edit verdict allows and the smart fast-allow). Same posture and
   // greppability convention as the read-only git fast-path it mirrors.
@@ -546,6 +557,7 @@ export function apply(ctx: Context, config: VolatileConfig): void {
       defaultModel,
       memory: smartMemory,
       lifetimeSignal,
+      log: logRunCodeStrip,
     })(exec, session)
     const tracked = Promise.resolve().then(() => task).finally(() => activeEvaluations.delete(tracked))
     activeEvaluations.add(tracked)

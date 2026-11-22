@@ -145,7 +145,16 @@ verdicts: `tools-only`, `tools-and-pure`, `pure`, `ask`.
   the danger list (a configured pattern can never be bypassed by the
   grammar), before memory and the LLM. A recognized program needs neither —
   no LLM call, and the source never leaves the machine. Unrecognized
-  programs fall through untouched, so smart keeps its fail-safes.
+  programs fall through untouched, so smart keeps its fail-safes. Before the
+  LLM call, `src/run-code-strip.ts` splits the program: gated `tools.*`
+  sub-calls become `[gated sub-call]` markers (each sub-call faces its own
+  gate at execution time, so the classifier reviews the direct code only)
+  and the duplicated `toolArguments` evidence field is nulled; a program
+  that could divert the `tools` binding (a shadowing binding, `eval` /
+  `Function`, dynamic `import()`, member writes, the object-reflection hijack
+  surfaces) is handed to the classifier raw — not splitting only means the
+  classifier sees more, never less. The danger list, session memory and the
+  `[code: …]` summary keep the original source everywhere.
 - **yolo / off**: unchanged, no inspection.
 
 Every allow from the gate logs one greppable line,

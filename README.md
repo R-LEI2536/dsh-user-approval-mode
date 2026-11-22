@@ -517,9 +517,28 @@ the plugin does, and where its reach ends:
   pipeline, ordered after the danger list (a configured pattern always
   wins) and before the LLM — recognized programs never reach the classifier
   and their source never leaves the machine; everything else rides the
-  pipeline unchanged. Yolo and off inspect nothing. Every gate allow logs
+  pipeline, with the classifier's evidence split as the next bullet
+  describes. Yolo and off inspect nothing. Every gate allow logs
   one greppable line,
   `[dsh-user-approval[run-code-gate]] decision=allow detail=<verdict>`.
+- **The smart classifier sees the split program.** When an unrecognized
+  program reaches the LLM under smart mode, its gated `tools.*` sub-calls
+  are first replaced by `[gated sub-call]` markers
+  (`src/run-code-strip.ts`): each sub-call already faces its own gate at
+  execution time under its real tool name with its real argument values,
+  so the classifier reviews the program's direct code — imports, direct
+  calls, data assembly — instead of re-judging calls that have their own
+  reviewer. The split is conservative and fails safe: a program that
+  binds the name `tools`, references `eval` / `Function`, uses a dynamic
+  `import()`, writes any member (including `globalThis`), or calls the
+  object-reflection hijack surfaces (`Object.assign`,
+  `Object.defineProperty`, `Reflect.set`, …) is NOT split — the classifier
+  sees the raw program. The danger-list match text, the session-memory
+  key, and the user-facing `[code: …]` summary all keep the original
+  source, and the classifier evidence no longer re-sends the program
+  through `toolArguments`. Every strip or abort logs one greppable line:
+  `[dsh-user-approval[run-code-strip]] decision=strip count=N` or
+  `decision=abort reason=<why>`.
 - **The top-level prompt carries the code.** The host approval panel renders no
   command block for `run_code`, so a top-level ask appends a one-line
   `[code: …]` summary (whitespace-collapsed, capped at 200 characters) after

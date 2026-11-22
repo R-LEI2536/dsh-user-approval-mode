@@ -20,7 +20,11 @@
  *      per-session bounded cache; a hit auto-approves without LLM.
  *   4. LLM classifier — one-shot chat call against `ctx.llm` with the
  *      evidence JSON + classifier prompt; `approve` → allow + remember,
- *      anything else → ask.
+ *      anything else → ask. For a top-level `run_code` call the evidence
+ *      `command` is the program SPLIT by `run-code-strip.ts`: gated
+ *      `tools.*` sub-calls become `[gated sub-call]` markers (they face
+ *      their own gate at execution time), and `toolArguments` stays null
+ *      so the raw program is not re-sent beside the split one.
  *   5. Fail-safe — every unexpected outcome (timeout, protocol error,
  *      missing seam, non-approve verdict, exception) routes to ask.
  *
@@ -38,6 +42,7 @@ import {
   runCodeGateVerdict,
   runCodeProgramFromArguments,
 } from './run-code-gate.js'
+import { stripGatedSubcalls } from './run-code-strip.js'
 
 // ─── Public types ───────────────────────────────────────────────────────────
 
@@ -618,8 +623,12 @@ export function createSmartShellEvaluator(options: {
   /** Optional `reason` string passed through when the upstream asked the
    *  user to escalate. We surface it as `justification` in evidence. */
   reasonForExec?: (execName: string) => string | undefined
+  /** Optional logger for the run_code evidence splitter's decisions. A
+   *  broken or missing logger must never change a verdict; the split
+   *  itself never depends on it. */
+  log?: (message: string) => void
 }): SmartShellEvaluator {
-  const { config, patterns, llm, defaultModel, memory, lifetimeSignal, reasonForExec } = options
+  const { config, patterns, llm, defaultModel, memory, lifetimeSignal, reasonForExec, log } = options
 
   return async (exec, session) => {
     const command = commandFromArguments(exec.arguments, exec.name)
@@ -685,10 +694,38 @@ export function createSmartShellEvaluator(options: {
     // `dsh-auto-approve`: AFTER session memory (so a remembered grant
     // still wins) and BEFORE the LLM call (so we never invoke it).
     if (userMessage.tooLong) return { kind: 'ask', detail: 'latest-user-message-too-long' }
+    // run_code evidence split (smart only, LLM evidence only): gated
+    // `tools.*` sub-calls are replaced by `[gated sub-call]` markers so the
+    // classifier reviews the program's direct code and cannot re-judge
+    // calls that face their own gate at execution time (see
+    // `run-code-strip.ts`). The original program stays with every other
+    // consumer: the danger-list match text, the session-memory key and —
+    // on ask — the user-facing preview all read the raw source above.
+    // `toolArguments` is nulled for run_code: `command` already carries the
+    // program (`commandFromArguments` reads `.code`), so re-serializing the
+    // arguments JSON would send the whole program twice — and after the
+    // split it would smuggle the raw sub-calls back in.
+    let evidenceCommand = command
+    let evidenceToolArguments: string | null | undefined = toolArgumentsString
+    if (exec.name === 'run_code') {
+      evidenceToolArguments = null
+      const program = runCodeProgramFromArguments(exec.arguments)
+      if (program !== undefined) {
+        const split = stripGatedSubcalls(program)
+        if (split.aborted === undefined) {
+          evidenceCommand = split.text
+          if (split.stripped > 0) {
+            log?.(`[dsh-user-approval[run-code-strip]] decision=strip count=${split.stripped}`)
+          }
+        } else {
+          log?.(`[dsh-user-approval[run-code-strip]] decision=abort reason=${split.aborted}`)
+        }
+      }
+    }
     const evidence: ClassifierEvidence = {
       toolName: exec.name,
-      command: command ?? null,
-      toolArguments: toolArgumentsString ?? null,
+      command: evidenceCommand ?? null,
+      toolArguments: evidenceToolArguments ?? null,
       justification: reasonForExec?.(exec.name) ?? null,
       workspacePath: session.header?.cwd ?? null,
       latestUserMessage: userMessage.text,
